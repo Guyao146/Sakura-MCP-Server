@@ -197,6 +197,20 @@ https://mcp.example.com/setup
 - OpenAI-compatible API Key 使用 AES-256-GCM 加密存储；
 - 安装令牌不能用于重新开启向导。
 
+Authentik Provider 应使用 Public Client + Authorization Code + PKCE，并注册精确回调地址：
+
+```text
+https://mcp.example.com/auth/callback
+```
+
+管理后台登录入口：
+
+```text
+https://mcp.example.com/auth/login
+```
+
+浏览器会话 Cookie 使用 `HttpOnly`、`SameSite=Lax`，HTTPS 部署下同时使用 `Secure`；数据库只保存 Session Token 的 SHA-256 哈希。退出登录后会话立即撤销。
+
 如果确需重新安装，应由服务器管理员先完成数据库备份，再通过受控维护流程重置 `installation_state`；不要向 Web 客户端提供“重置安装”按钮。
 
 健康检查：
@@ -257,6 +271,7 @@ npm.cmd start
 - 首次启动 Web 安装向导、数据库诊断、Provider 测试和安装锁；
 - AES-256-GCM 服务端配置加密；
 - 数据库 Agent Key、哈希认证、到期、撤销与空间级 scopes；
+- Authentik Authorization Code + PKCE 浏览器登录与哈希 Session；
 
 进行中：
 

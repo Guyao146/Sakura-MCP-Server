@@ -27,4 +27,12 @@ describe('memory database schema', () => {
     expect(sql).toContain('encrypted boolean NOT NULL DEFAULT false');
     expect(sql).toContain('completed boolean NOT NULL DEFAULT false');
   });
+
+  it('defines expiring OIDC attempts and hashed Web sessions', async () => {
+    const sql = await readFile(new URL('../migrations/003_web_sessions.sql', import.meta.url), 'utf8');
+    expect(sql).toContain('CREATE TABLE oidc_login_attempts');
+    expect(sql).toContain('CREATE TABLE web_sessions');
+    expect(sql).toContain('state_hash text PRIMARY KEY');
+    expect(sql).toContain('token_hash text UNIQUE NOT NULL');
+  });
 });

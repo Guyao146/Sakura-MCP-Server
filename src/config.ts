@@ -35,7 +35,10 @@ export type Scope =
 export interface ApiKeyRecord { id: string; secret: string; scopes: Scope[]; }
 export interface AppConfig {
   publicBaseUrl: string; host: string; port: number; logLevel: string; apiKeys: ApiKeyRecord[];
-  authentik?: { issuer: string; audience: string; jwksUri: string; scopeClaim: string };
+  authentik?: {
+    issuer: string; audience: string; jwksUri: string; scopeClaim: string;
+    clientId?: string; authorizationUrl?: string; tokenUrl?: string; userinfoUrl?: string;
+  };
   database: { connectionString: string; maxConnections: number; autoMigrate: boolean };
   setup: { token: string; encryptionKey: string };
   openaiCompatible?: { baseUrl: string; apiKey?: string; chatModel?: string; embeddingModel?: string };

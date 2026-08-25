@@ -11,6 +11,7 @@ import { createServer } from './tools.js';
 import { setupPage } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
 import { SettingsRepository } from './settings/repository.js';
+import { WebSessionService } from './web/session.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
@@ -21,6 +22,7 @@ const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey
 let config = await settings.apply(baseConfig);
 let auth = new AuthService(config, database);
 const setup = new SetupService(baseConfig, database, settings);
+const webSessions = new WebSessionService(database, () => config);
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
 const setupGuard = async (context: Context, next: Next) => {
@@ -56,6 +58,40 @@ app.post('/api/setup/complete', async context => {
   } catch (error) { return context.json({ error: 'setup_failed', error_description: error instanceof Error ? error.message : 'Setup failed.' }, 400); }
 });
 
+app.get('/auth/login', async context => {
+  if (!(await settings.installation()).completed) return context.redirect('/setup');
+  try { return context.redirect(await webSessions.begin(context.req.query('return_to') ?? '/admin')); }
+  catch (error) { return context.json({ error: 'login_failed', error_description: error instanceof Error ? error.message : 'Login failed.' }, 500); }
+});
+app.get('/auth/callback', async context => {
+  const code = context.req.query('code'); const state = context.req.query('state');
+  if (!code || !state) return context.json({ error: 'invalid_callback', error_description: 'Missing code or state.' }, 400);
+  try {
+    const result = await webSessions.callback(code, state);
+    context.header('Set-Cookie', webSessions.cookie(result.token));
+    return context.redirect(result.returnTo);
+  } catch (error) { return context.json({ error: 'callback_failed', error_description: error instanceof Error ? error.message : 'OIDC callback failed.' }, 401); }
+});
+app.post('/auth/logout', async context => {
+  await webSessions.logout(WebSessionService.readCookie(context.req.header('cookie')));
+  context.header('Set-Cookie', webSessions.clearCookie());
+  return context.json({ loggedOut: true });
+});
+app.get('/api/me', async context => {
+  try {
+    const identity = await webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));
+    return context.json({ id: identity.userId, email: identity.email, displayName: identity.displayName,
+      avatarUrl: identity.avatarUrl, isSystemAdmin: identity.isSystemAdmin, expiresAt: identity.expiresAt });
+  } catch (error) { return context.json({ error: 'unauthorized', error_description: error instanceof Error ? error.message : 'Unauthorized.' }, 401); }
+});
+app.get('/admin', async context => {
+  try {
+    const identity = await webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));
+    if (!identity.isSystemAdmin) return context.text('Forbidden', 403);
+    return context.html(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Sakura-MCP-Server 管理台</title><style>body{margin:0;background:#0c1017;color:#edf2fa;font:16px/1.6 system-ui}main{max-width:760px;margin:10vh auto;padding:30px;background:#151b26;border:1px solid #293244;border-radius:18px}h1{color:#e58aa3}code{color:#67d6a3}</style><main><h1>Sakura-MCP-Server</h1><h2>管理会话已建立</h2><p>欢迎，${escapeHtml(identity.displayName)}（${escapeHtml(identity.email ?? '')}）。</p><p>下一阶段将在这里提供空间、成员、Agent Key、模型配置、记忆浏览和冲突确认。</p><p>当前身份 API：<code>/api/me</code></p></main></html>`);
+  } catch { return context.redirect('/auth/login?return_to=/admin'); }
+});
+
 app.get('/health', async context => {
   try {
     await database.query('SELECT 1');
@@ -86,3 +122,7 @@ app.all('/mcp', async context => {
 });
 
 serve({ fetch: app.fetch, hostname: baseConfig.host, port: baseConfig.port }, info => logger.info({ host: baseConfig.host, port: info.port }, 'Sakura MCP Server listening'));
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!);
+}

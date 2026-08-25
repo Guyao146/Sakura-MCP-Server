@@ -7,6 +7,7 @@ import { AuthService } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { requireAgentSpaceScope } from '../src/memory/permissions.js';
 import { SpaceRepository } from '../src/spaces/repository.js';
+import { WebSessionService } from '../src/web/session.js';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -23,14 +24,18 @@ describeDatabase('PostgreSQL installation integration', () => {
     const extension = await database.query<{ extversion: string }>("SELECT extversion FROM pg_extension WHERE extname='vector'");
     const migrations = await database.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(extension.rows[0].extversion).toBeTruthy();
-    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql']);
+    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql']);
     await expect(settings.installation()).resolves.toMatchObject({ completed: false });
   });
 
   it('completes installation once and encrypts provider credentials', async () => {
     await settings.complete({
       administratorEmail: 'owner@example.com',
-      authentik: { issuer: 'https://login.example.com/application/o/sakura-mcp/', audience: 'https://mcp.example.com', jwksUri: 'https://login.example.com/jwks/', scopeClaim: 'scope' },
+      authentik: {
+        issuer: 'https://login.example.com/application/o/sakura-mcp/', audience: 'https://mcp.example.com',
+        jwksUri: 'https://login.example.com/jwks/', scopeClaim: 'scope', clientId: 'sakura-web',
+        authorizationUrl: 'https://login.example.com/application/o/authorize/', tokenUrl: 'https://login.example.com/application/o/token/'
+      },
       openaiCompatible: { baseUrl: 'https://api.example.com/v1', apiKey: 'provider-secret', chatModel: 'chat', embeddingModel: 'embed' },
       ollama: { baseUrl: 'http://ollama:11434', chatModel: 'local-chat', embeddingModel: 'local-embed' }
     });
@@ -74,5 +79,24 @@ describeDatabase('PostgreSQL installation integration', () => {
     expect(visible.map(row => row.id)).not.toContain(hidden.id);
     await agents.revoke(identity.userId, created.id);
     await expect(new AuthService(authConfig, database).authenticate(`Bearer ${created.token}`)).rejects.toThrow('Invalid credential');
+  });
+
+  it('stores only hashed Web sessions and revokes logout immediately', async () => {
+    const identity = await new MemoryRepository(database).ensureUser('web-session-user', { email: 'web@example.com', displayName: 'Web User' });
+    const token = `sess_${Buffer.alloc(32, 21).toString('base64url')}`;
+    const tokenHash = (await import('node:crypto')).createHash('sha256').update(token).digest('hex');
+    await database.query(`INSERT INTO web_sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '1 hour')`, [identity.userId, tokenHash]);
+    const service = new WebSessionService(database, () => loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'w'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
+    }));
+    await expect(service.authenticate(token)).resolves.toMatchObject({ userId: identity.userId, email: 'web@example.com' });
+    expect(service.cookie(token)).toContain('HttpOnly');
+    expect(service.cookie(token)).toContain('SameSite=Lax');
+    expect(service.cookie(token)).toContain('Secure');
+    const raw = await database.query<{ token_hash: string }>('SELECT token_hash FROM web_sessions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1', [identity.userId]);
+    expect(raw.rows[0].token_hash).not.toContain(token);
+    await service.logout(token);
+    await expect(service.authenticate(token)).rejects.toThrow('invalid, expired, or revoked');
   });
 });
