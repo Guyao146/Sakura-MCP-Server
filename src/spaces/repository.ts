@@ -6,12 +6,14 @@ import type { SpaceRole } from '../memory/types.js';
 export class SpaceRepository {
   constructor(private readonly database: Database) {}
 
-  async list(userId: string) {
+  async list(userId: string, agentId?: string) {
     const result = await this.database.query(
       `SELECT s.id,s.type,s.name,s.description,s.created_by,s.auto_extract_enabled,s.auto_merge_enabled,
        s.conflict_detection_enabled,s.privacy_mode,s.created_at,s.updated_at,sm.role
        FROM spaces s JOIN space_members sm ON sm.space_id=s.id
-       WHERE sm.user_id=$1 AND s.deleted_at IS NULL ORDER BY s.type='personal' DESC,s.name`, [userId]);
+       WHERE sm.user_id=$1 AND s.deleted_at IS NULL
+       AND ($2::uuid IS NULL OR EXISTS(SELECT 1 FROM agent_space_grants asg WHERE asg.agent_id=$2 AND asg.space_id=s.id))
+       ORDER BY s.type='personal' DESC,s.name`, [userId, agentId ?? null]);
     return result.rows;
   }
 

@@ -53,6 +53,28 @@ memory:read memory:write memory:update memory:delete memory:export
 space:create space:manage member:manage agent:manage admin:system
 ```
 
+### Agent API Key
+
+正式 Agent Key 保存在 PostgreSQL，而不是共享 `.env` 密钥：
+
+```text
+agent_create              创建 Key，明文 token 只返回一次
+agent_list                查看前缀、scope、到期、撤销和空间授权
+agent_revoke              立即撤销 Key
+agent_grant_space         授予指定空间和空间级 scopes
+agent_revoke_space        移除指定空间授权
+```
+
+Token 形如 `sk_sakura_<prefix>_<random-secret>`。数据库只保存完整 token 的 SHA-256 哈希和非敏感前缀。认证时同时校验：
+
+```text
+Agent 全局 scopes
+∩ Agent 对目标空间的 grants
+∩ Agent 所属用户在目标空间的成员角色
+```
+
+Agent 只能列出明确授权的空间；撤销后下一次请求立即失效。创建、授权和撤销 Agent Key 必须由 Authentik 人工用户执行，Agent 不能自行创建子 Key。
+
 ## MCP Tools
 
 当前核心工具：
@@ -69,9 +91,14 @@ space_create                创建共享空间
 space_list_members          查看成员与角色
 space_invite_member         创建限时、一次性邀请
 space_accept_invitation     Authentik 邮箱匹配后接受邀请
+agent_create                创建只显示一次的 Agent Key
+agent_list                  列出 Agent 与空间授权
+agent_revoke                撤销 Agent Key
+agent_grant_space           配置空间级权限
+agent_revoke_space          移除空间级权限
 ```
 
-后续工具：`memory_link`、`memory_ingest`、`memory_conflicts`、`memory_feedback`、`memory_export`、Agent Key 管理和空间策略管理。
+后续工具：`memory_link`、`memory_ingest`、`memory_conflicts`、`memory_feedback`、`memory_export` 和空间策略管理。
 
 ## 记忆数据模型
 
@@ -217,7 +244,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`main` 的 `v0.1.0` 是早期安全 MCP 网关版本。`feature/ai-memory-v0.2` 正在重构为通用记忆平台。
+`v0.1.0` 是早期安全 MCP 网关版本；当前直接在 `main` 持续开发通用记忆平台 `v0.2.0`。
 
 已完成：
 
@@ -229,11 +256,11 @@ npm.cmd start
 - API Key + Authentik JWT 双认证基础。
 - 首次启动 Web 安装向导、数据库诊断、Provider 测试和安装锁；
 - AES-256-GCM 服务端配置加密；
+- 数据库 Agent Key、哈希认证、到期、撤销与空间级 scopes；
 
 进行中：
 
 - 完整 React Web 管理后台与 OIDC Browser Session；
-- 数据库 Agent Key 的创建、哈希、撤销和空间授权；
 - 异步自动提取、embedding、混合检索、合并与冲突确认；
 - 导入导出、MCP Resources、审计后台和跨租户安全测试。
 

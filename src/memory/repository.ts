@@ -63,6 +63,14 @@ export class MemoryRepository {
     return result.rows[0];
   }
 
+  async spaceForMemory(userId: string, memoryId: string): Promise<string> {
+    const result = await this.database.query<{ space_id: string }>(
+      `SELECT m.space_id FROM memories m JOIN space_members sm ON sm.space_id=m.space_id
+       WHERE m.id=$1 AND sm.user_id=$2 AND m.deleted_at IS NULL`, [memoryId, userId]);
+    if (!result.rows[0]) throw new Error('Memory not found or access denied.');
+    return result.rows[0].space_id;
+  }
+
   async search(userId: string, spaceId: string, query: string, limit: number, types?: string[], tags?: string[]): Promise<MemoryRecord[]> {
     await requireSpaceRole(this.database, userId, spaceId, 'viewer');
     const result = await this.database.query<MemoryRecord>(

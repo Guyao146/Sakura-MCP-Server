@@ -19,7 +19,7 @@ const database = new Database(baseConfig.database.connectionString, baseConfig.d
 if (baseConfig.database.autoMigrate) await database.migrate();
 const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
 let config = await settings.apply(baseConfig);
-let auth = new AuthService(config);
+let auth = new AuthService(config, database);
 const setup = new SetupService(baseConfig, database, settings);
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
@@ -51,7 +51,7 @@ app.post('/api/setup/complete', async context => {
     const body = setupInputSchema.parse(await context.req.json());
     await setup.complete(body);
     config = await settings.apply(baseConfig);
-    auth = new AuthService(config);
+    auth = new AuthService(config, database);
     return context.json({ completed: true });
   } catch (error) { return context.json({ error: 'setup_failed', error_description: error instanceof Error ? error.message : 'Setup failed.' }, 400); }
 });

@@ -2,6 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Database } from '../src/database.js';
 import { MemoryRepository } from '../src/memory/repository.js';
 import { SettingsRepository } from '../src/settings/repository.js';
+import { AgentRepository } from '../src/agents/repository.js';
+import { AuthService } from '../src/auth.js';
+import { loadConfig } from '../src/config.js';
+import { requireAgentSpaceScope } from '../src/memory/permissions.js';
+import { SpaceRepository } from '../src/spaces/repository.js';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -40,5 +45,34 @@ describeDatabase('PostgreSQL installation integration', () => {
     const identity = await new MemoryRepository(database).ensureUser('authentik-subject-owner', { email: 'OWNER@example.com', displayName: 'Owner' });
     const user = await database.query<{ is_system_admin: boolean }>('SELECT is_system_admin FROM users WHERE id=$1', [identity.userId]);
     expect(user.rows[0].is_system_admin).toBe(true);
+  });
+
+  it('creates hashed Agent keys, enforces space grants, and revokes immediately', async () => {
+    const memory = new MemoryRepository(database);
+    const identity = await memory.ensureUser('agent-owner-subject', { email: 'agent-owner@example.com', displayName: 'Agent Owner' });
+    const spaces = new SpaceRepository(database);
+    const shared = await spaces.create(identity.userId, 'Agent Shared Space', 'integration test');
+    const hidden = await spaces.create(identity.userId, 'Hidden Space', 'must not be listed');
+    const agents = new AgentRepository(database);
+    const created = await agents.create(identity.userId, 'Test Agent', ['memory:read', 'memory:write']);
+    expect(created.token).toMatch(/^sk_sakura_/);
+    const raw = await database.query<{ secret_hash: string }>('SELECT secret_hash FROM agent_credentials WHERE id=$1', [created.id]);
+    expect(raw.rows[0].secret_hash).not.toContain(created.token);
+
+    const authConfig = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'z'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
+    });
+    const principal = await new AuthService(authConfig, database).authenticate(`Bearer ${created.token}`);
+    expect(principal).toMatchObject({ id: 'agent-owner-subject', agentId: created.id, scopes: ['memory:read', 'memory:write'] });
+    await expect(requireAgentSpaceScope(database, created.id, shared.id, 'memory:read')).rejects.toThrow('not granted');
+    await agents.grant(identity.userId, created.id, shared.id, ['memory:read']);
+    await expect(requireAgentSpaceScope(database, created.id, shared.id, 'memory:read')).resolves.toBeUndefined();
+    await expect(agents.grant(identity.userId, created.id, shared.id, ['memory:delete'])).rejects.toThrow('exceeds Agent global scopes');
+    const visible = await spaces.list(identity.userId, created.id);
+    expect(visible.map(row => row.id)).toContain(shared.id);
+    expect(visible.map(row => row.id)).not.toContain(hidden.id);
+    await agents.revoke(identity.userId, created.id);
+    await expect(new AuthService(authConfig, database).authenticate(`Bearer ${created.token}`)).rejects.toThrow('Invalid credential');
   });
 });

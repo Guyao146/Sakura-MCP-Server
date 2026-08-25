@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { AppConfig, Scope } from './config.js';
+import type { Database } from './database.js';
 
 export interface Principal {
   id: string;
@@ -9,6 +10,7 @@ export interface Principal {
   expiresAt: number;
   email?: string;
   displayName?: string;
+  agentId?: string;
 }
 
 const equal = (left: string, right: string): boolean => {
@@ -18,7 +20,7 @@ const equal = (left: string, right: string): boolean => {
 
 export class AuthService {
   private readonly jwks?: ReturnType<typeof createRemoteJWKSet>;
-  constructor(private readonly config: AppConfig) {
+  constructor(private readonly config: AppConfig, private readonly database?: Database) {
     if (config.authentik) this.jwks = createRemoteJWKSet(new URL(config.authentik.jwksUri));
   }
 
@@ -27,6 +29,24 @@ export class AuthService {
     const credential = header.slice(7).trim();
     const apiKey = this.config.apiKeys.find(key => equal(key.secret, credential));
     if (apiKey) return { id: apiKey.id, source: 'api_key', scopes: apiKey.scopes, expiresAt: Math.floor(Date.now() / 1000) + 300 };
+    if (this.database && credential.startsWith('sk_sakura_')) {
+      const secretHash = createHash('sha256').update(credential).digest('hex');
+      const result = await this.database.query<{
+        agent_id: string; oidc_subject: string; email: string | null; display_name: string; scopes: Scope[]; expires_at: string | null;
+      }>(
+        `SELECT ac.id AS agent_id,u.oidc_subject,u.email,u.display_name,ac.scopes,ac.expires_at
+         FROM agent_credentials ac JOIN users u ON u.id=ac.owner_id
+         WHERE ac.secret_hash=$1 AND ac.revoked_at IS NULL AND (ac.expires_at IS NULL OR ac.expires_at>now())`, [secretHash]);
+      const agent = result.rows[0];
+      if (agent) {
+        await this.database.query('UPDATE agent_credentials SET last_used_at=now() WHERE id=$1', [agent.agent_id]);
+        return {
+          id: agent.oidc_subject, source: 'api_key', scopes: agent.scopes, agentId: agent.agent_id,
+          expiresAt: agent.expires_at ? Math.floor(new Date(agent.expires_at).getTime() / 1000) : Math.floor(Date.now() / 1000) + 300,
+          email: agent.email ?? undefined, displayName: agent.display_name
+        };
+      }
+    }
     if (!this.config.authentik || !this.jwks) throw new Error('Invalid credential.');
     const { payload } = await jwtVerify(credential, this.jwks, { issuer: this.config.authentik.issuer, audience: this.config.authentik.audience });
     const subject = payload.sub;
