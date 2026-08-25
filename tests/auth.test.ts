@@ -5,6 +5,8 @@ import { loadConfig } from '../src/config.js';
 const config = loadConfig({
   PUBLIC_BASE_URL: 'https://mcp.example.com',
   DATABASE_URL: 'postgresql://sakura:test@localhost:5432/sakura_memory',
+  SETUP_TOKEN: 's'.repeat(32),
+  CONFIG_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64url'),
   MCP_API_KEYS: 'trusted:correct-secret:memory:read|memory:write'
 });
 

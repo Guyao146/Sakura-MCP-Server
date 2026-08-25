@@ -1,20 +1,60 @@
 import { serve } from '@hono/node-server';
 import { createMcpHonoApp } from '@modelcontextprotocol/hono';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server';
+import type { Context, Next } from 'hono';
 import pino from 'pino';
 import { AuditLogger } from './audit.js';
 import { AuthService } from './auth.js';
 import { loadConfig } from './config.js';
 import { Database } from './database.js';
 import { createServer } from './tools.js';
+import { setupPage } from './setup/page.js';
+import { SetupService, setupInputSchema } from './setup/service.js';
+import { SettingsRepository } from './settings/repository.js';
 
-const config = loadConfig();
-const logger = pino({ level: config.logLevel });
-const auth = new AuthService(config);
-const audit = new AuditLogger(config.auditLogPath);
-const database = new Database(config.database.connectionString, config.database.maxConnections);
-if (config.database.autoMigrate) await database.migrate();
-const app = createMcpHonoApp({ host: config.host, allowedHosts: [new URL(config.publicBaseUrl).hostname] });
+const baseConfig = loadConfig();
+const logger = pino({ level: baseConfig.logLevel });
+const audit = new AuditLogger(baseConfig.auditLogPath);
+const database = new Database(baseConfig.database.connectionString, baseConfig.database.maxConnections);
+if (baseConfig.database.autoMigrate) await database.migrate();
+const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
+let config = await settings.apply(baseConfig);
+let auth = new AuthService(config);
+const setup = new SetupService(baseConfig, database, settings);
+const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
+
+const setupGuard = async (context: Context, next: Next) => {
+  const installation = await settings.installation();
+  if (installation.completed) return context.json({ error: 'setup_locked', error_description: 'Sakura-MCP-Server is already installed.' }, 410);
+  if (!setup.verifyToken(context.req.header('x-setup-token'))) return context.json({ error: 'unauthorized', error_description: 'Invalid setup token.' }, 401);
+  await next();
+};
+
+app.get('/setup', context => context.html(setupPage));
+app.get('/api/setup/status', async context => context.json(await settings.installation()));
+app.use('/api/setup/*', setupGuard);
+app.get('/api/setup/diagnostics', async context => context.json(await setup.diagnostics()));
+app.post('/api/setup/test-authentik', async context => {
+  try {
+    const body = setupInputSchema.pick({ authentik: true }).parse(await context.req.json());
+    return context.json(await setup.testAuthentik(body.authentik));
+  } catch (error) { return context.json({ error: 'validation_failed', error_description: error instanceof Error ? error.message : 'Validation failed.' }, 400); }
+});
+app.post('/api/setup/test-provider', async context => {
+  try {
+    const body = setupInputSchema.pick({ openaiCompatible: true, ollama: true }).parse(await context.req.json());
+    return context.json(await setup.testProvider(body));
+  } catch (error) { return context.json({ error: 'provider_test_failed', error_description: error instanceof Error ? error.message : 'Provider test failed.' }, 400); }
+});
+app.post('/api/setup/complete', async context => {
+  try {
+    const body = setupInputSchema.parse(await context.req.json());
+    await setup.complete(body);
+    config = await settings.apply(baseConfig);
+    auth = new AuthService(config);
+    return context.json({ completed: true });
+  } catch (error) { return context.json({ error: 'setup_failed', error_description: error instanceof Error ? error.message : 'Setup failed.' }, 400); }
+});
 
 app.get('/health', async context => {
   try {
@@ -29,6 +69,7 @@ app.get('/.well-known/oauth-protected-resource/mcp', context => {
   return context.json({ resource: `${config.publicBaseUrl}/mcp`, authorization_servers: [config.authentik.issuer] });
 });
 app.all('/mcp', async context => {
+  if (!(await settings.installation()).completed) return context.json({ error: 'setup_required', error_description: 'Complete installation at /setup first.' }, 503);
   let principal;
   try { principal = await auth.authenticate(context.req.header('authorization')); }
   catch (error) {
@@ -44,4 +85,4 @@ app.all('/mcp', async context => {
   finally { await transport.close(); }
 });
 
-serve({ fetch: app.fetch, hostname: config.host, port: config.port }, info => logger.info({ host: config.host, port: info.port }, 'Sakura MCP Server listening'));
+serve({ fetch: app.fetch, hostname: baseConfig.host, port: baseConfig.port }, info => logger.info({ host: baseConfig.host, port: info.port }, 'Sakura MCP Server listening'));

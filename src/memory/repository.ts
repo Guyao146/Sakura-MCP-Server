@@ -15,6 +15,12 @@ export class MemoryRepository {
          display_name=coalesce(EXCLUDED.display_name,users.display_name),last_login_at=now(),updated_at=now()
          RETURNING id`, [subject, profile?.email ?? null, profile?.displayName ?? subject]);
       const userId = result.rows[0].id;
+      if (profile?.email) {
+        await client.query(
+          `UPDATE users SET is_system_admin=true WHERE id=$1
+           AND EXISTS(SELECT 1 FROM system_admin_allowlist WHERE lower(email)=lower($2))`,
+          [userId, profile.email]);
+      }
       const space = await client.query<{ id: string }>(
         `INSERT INTO spaces(type,name,description,created_by) VALUES('personal','Personal Memory','Private long-term memory', $1)
          ON CONFLICT (created_by) WHERE type='personal' AND deleted_at IS NULL DO UPDATE SET updated_at=spaces.updated_at

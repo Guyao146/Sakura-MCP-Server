@@ -18,4 +18,13 @@ describe('memory database schema', () => {
     expect(sql).toContain('secret_hash text UNIQUE NOT NULL');
     expect(sql).not.toMatch(/\b(secret|token)\s+text\b/);
   });
+
+  it('defines locked installation state and encrypted system settings', async () => {
+    const sql = await readFile(new URL('../migrations/002_installation.sql', import.meta.url), 'utf8');
+    for (const table of ['system_settings', 'installation_state', 'system_admin_allowlist']) {
+      expect(sql).toContain(`CREATE TABLE ${table}`);
+    }
+    expect(sql).toContain('encrypted boolean NOT NULL DEFAULT false');
+    expect(sql).toContain('completed boolean NOT NULL DEFAULT false');
+  });
 });

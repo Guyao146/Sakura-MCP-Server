@@ -6,6 +6,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: sakura_test
+          POSTGRES_USER: sakura
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sakura -d sakura_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     permissions:
       contents: read
     steps:
@@ -16,4 +30,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: docker build --tag sakura-ecosystem-mcp:ci .
+        env:
+          DATABASE_TEST_URL: postgresql://sakura:test-password@127.0.0.1:5432/sakura_test
+      - run: docker build --tag sakura-mcp-server:ci .

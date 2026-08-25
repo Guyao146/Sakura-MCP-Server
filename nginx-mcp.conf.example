@@ -17,6 +17,8 @@ server {
         proxy_read_timeout 120s;
         proxy_buffering off;
     }
+    location = /setup { proxy_pass http://127.0.0.1:3000; }
+    location ^~ /api/setup/ { proxy_pass http://127.0.0.1:3000; }
     location = /health { proxy_pass http://127.0.0.1:3000; access_log off; }
     location = /.well-known/oauth-protected-resource/mcp { proxy_pass http://127.0.0.1:3000; }
 }

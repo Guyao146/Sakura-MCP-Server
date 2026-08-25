@@ -122,10 +122,55 @@ OLLAMA_EMBEDDING_MODEL=
 git clone https://github.com/Guyao146/Sakura-MCP-Server.git
 cd Sakura-MCP-Server
 cp .env.example .env
-# 修改数据库密码、PUBLIC_BASE_URL、Authentik 和 bootstrap key
+# 修改数据库密码、PUBLIC_BASE_URL，并生成 SETUP_TOKEN 和 CONFIG_ENCRYPTION_KEY
 chmod 600 .env
 docker compose up -d --build
 ```
+
+生成安装密钥：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+请运行两次，分别填写：
+
+```dotenv
+SETUP_TOKEN=<第一次生成的值>
+CONFIG_ENCRYPTION_KEY=<第二次生成的值>
+```
+
+`CONFIG_ENCRYPTION_KEY` 是长期主密钥，必须离线备份。丢失后，数据库中已加密的模型 API Key 无法恢复。
+
+启动后访问：
+
+```text
+https://mcp.example.com/setup
+```
+
+## 安装向导
+
+首次启动的中文 Web 安装向导包含四个步骤：
+
+1. 输入服务器 `.env` 中的 `SETUP_TOKEN`，检查 PostgreSQL、pgvector 与迁移；
+2. 配置并测试 Authentik Issuer、Audience、JWKS 和首位管理员邮箱；
+3. 可选配置并测试 OpenAI-compatible 或 Ollama；
+4. 确认配置加密密钥已备份，完成安装并锁定向导。
+
+安装完成前：
+
+- `/setup` 可打开安装页面；
+- Setup 写接口必须携带 `X-Setup-Token`；
+- `/mcp` 返回 `503 setup_required`，不会在未配置身份系统时对外提供记忆能力。
+
+安装完成后：
+
+- Setup 配置接口永久返回 `410 setup_locked`；
+- Authentik 和 Provider 配置从数据库加载；
+- OpenAI-compatible API Key 使用 AES-256-GCM 加密存储；
+- 安装令牌不能用于重新开启向导。
+
+如果确需重新安装，应由服务器管理员先完成数据库备份，再通过受控维护流程重置 `installation_state`；不要向 Web 客户端提供“重置安装”按钮。
 
 健康检查：
 
@@ -182,6 +227,8 @@ npm.cmd start
 - OpenAI-compatible 与 Ollama Provider；
 - 通用记忆和空间 MCP Tools；
 - API Key + Authentik JWT 双认证基础。
+- 首次启动 Web 安装向导、数据库诊断、Provider 测试和安装锁；
+- AES-256-GCM 服务端配置加密；
 
 进行中：
 
