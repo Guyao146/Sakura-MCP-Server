@@ -1,6 +1,6 @@
-# Sakura EcoSystem MCP Server
+# Sakura-MCP-Server
 
-面向 **Life Dashboard、Home Assistant 和 DSH** 的安全远程 MCP 网关。服务基于官方 MCP TypeScript SDK v2，提供 Streamable HTTP 端点：`https://你的域名/mcp`。
+**Sakura-MCP-Server** 是面向 Life Dashboard、Home Assistant 和 DSH 的安全远程 MCP 网关。服务基于官方 MCP TypeScript SDK v2，提供 Streamable HTTP 端点：`https://你的域名/mcp`。
 
 ## 当前能力
 
