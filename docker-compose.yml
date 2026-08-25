@@ -1,9 +1,27 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sakura_memory
+      POSTGRES_USER: sakura
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sakura -d sakura_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   sakura-mcp:
     build: .
-    image: sakura-ecosystem-mcp:latest
+    image: sakura-mcp-server:latest
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -13,3 +31,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+
+volumes:
+  postgres-data:

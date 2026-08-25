@@ -13,25 +13,30 @@ const environmentSchema = z.object({
   AUTHENTIK_AUDIENCE: z.string().optional().or(z.literal('')),
   AUTHENTIK_JWKS_URI: optionalUrl,
   AUTHENTIK_SCOPE_CLAIM: z.string().default('scope'),
-  HOME_ASSISTANT_URL: optionalUrl,
-  HOME_ASSISTANT_TOKEN: z.string().optional().or(z.literal('')),
-  HOME_ASSISTANT_CONTROLLABLE_ENTITIES: z.string().default(''),
-  HOME_ASSISTANT_ALLOWED_SCENES: z.string().default(''),
-  LIFE_DASHBOARD_INTERNAL_URL: optionalUrl,
-  LIFE_DASHBOARD_INTERNAL_TOKEN: z.string().optional().or(z.literal('')),
+  DATABASE_URL: z.string().min(1),
+  DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
+  AUTO_MIGRATE: z.enum(['true', 'false']).default('true'),
+  OPENAI_COMPATIBLE_BASE_URL: optionalUrl,
+  OPENAI_COMPATIBLE_API_KEY: z.string().optional().or(z.literal('')),
+  OPENAI_COMPATIBLE_CHAT_MODEL: z.string().optional().or(z.literal('')),
+  OPENAI_COMPATIBLE_EMBEDDING_MODEL: z.string().optional().or(z.literal('')),
+  OLLAMA_BASE_URL: optionalUrl,
+  OLLAMA_CHAT_MODEL: z.string().optional().or(z.literal('')),
+  OLLAMA_EMBEDDING_MODEL: z.string().optional().or(z.literal('')),
   AUDIT_LOG_PATH: z.string().default('./data/audit.jsonl')
 });
 
 export type Scope =
-  | 'life:read' | 'home:read' | 'home:control' | 'todo:read' | 'todo:write'
-  | 'dsh:summary' | 'dsh:details' | 'dsh:followup';
+  | 'memory:read' | 'memory:write' | 'memory:update' | 'memory:delete' | 'memory:export'
+  | 'space:create' | 'space:manage' | 'member:manage' | 'agent:manage' | 'admin:system';
 
 export interface ApiKeyRecord { id: string; secret: string; scopes: Scope[]; }
 export interface AppConfig {
   publicBaseUrl: string; host: string; port: number; logLevel: string; apiKeys: ApiKeyRecord[];
   authentik?: { issuer: string; audience: string; jwksUri: string; scopeClaim: string };
-  homeAssistant?: { url: string; token: string; controllableEntities: Set<string>; allowedScenes: Set<string> };
-  lifeDashboard?: { internalUrl: string; internalToken: string };
+  database: { connectionString: string; maxConnections: number; autoMigrate: boolean };
+  openaiCompatible?: { baseUrl: string; apiKey?: string; chatModel?: string; embeddingModel?: string };
+  ollama?: { baseUrl: string; chatModel?: string; embeddingModel?: string };
   auditLogPath: string;
 }
 
@@ -55,17 +60,14 @@ export function loadConfig(env = process.env): AppConfig {
   if (oauthValues.some(Boolean) && !oauthValues.every(Boolean)) {
     throw new Error('AUTHENTIK_ISSUER, AUTHENTIK_AUDIENCE and AUTHENTIK_JWKS_URI must be configured together.');
   }
-  const haValues = [value.HOME_ASSISTANT_URL, value.HOME_ASSISTANT_TOKEN];
-  if (haValues.some(Boolean) && !haValues.every(Boolean)) throw new Error('HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN must be configured together.');
-  const dashboardValues = [value.LIFE_DASHBOARD_INTERNAL_URL, value.LIFE_DASHBOARD_INTERNAL_TOKEN];
-  if (dashboardValues.some(Boolean) && !dashboardValues.every(Boolean)) throw new Error('LIFE_DASHBOARD_INTERNAL_URL and LIFE_DASHBOARD_INTERNAL_TOKEN must be configured together.');
   if (!value.MCP_API_KEYS && !oauthValues.every(Boolean)) throw new Error('Configure at least one MCP_API_KEYS entry or complete Authentik JWT validation.');
   return {
     publicBaseUrl: value.PUBLIC_BASE_URL.replace(/\/$/, ''), host: value.HOST, port: value.PORT, logLevel: value.LOG_LEVEL,
     apiKeys: parseApiKeys(value.MCP_API_KEYS),
     authentik: oauthValues.every(Boolean) ? { issuer: value.AUTHENTIK_ISSUER!, audience: value.AUTHENTIK_AUDIENCE!, jwksUri: value.AUTHENTIK_JWKS_URI!, scopeClaim: value.AUTHENTIK_SCOPE_CLAIM } : undefined,
-    homeAssistant: haValues.every(Boolean) ? { url: value.HOME_ASSISTANT_URL!.replace(/\/$/, ''), token: value.HOME_ASSISTANT_TOKEN!, controllableEntities: new Set(split(value.HOME_ASSISTANT_CONTROLLABLE_ENTITIES)), allowedScenes: new Set(split(value.HOME_ASSISTANT_ALLOWED_SCENES)) } : undefined,
-    lifeDashboard: dashboardValues.every(Boolean) ? { internalUrl: value.LIFE_DASHBOARD_INTERNAL_URL!.replace(/\/$/, ''), internalToken: value.LIFE_DASHBOARD_INTERNAL_TOKEN! } : undefined,
+    database: { connectionString: value.DATABASE_URL, maxConnections: value.DATABASE_MAX_CONNECTIONS, autoMigrate: value.AUTO_MIGRATE === 'true' },
+    openaiCompatible: value.OPENAI_COMPATIBLE_BASE_URL ? { baseUrl: value.OPENAI_COMPATIBLE_BASE_URL.replace(/\/$/, ''), apiKey: value.OPENAI_COMPATIBLE_API_KEY || undefined, chatModel: value.OPENAI_COMPATIBLE_CHAT_MODEL || undefined, embeddingModel: value.OPENAI_COMPATIBLE_EMBEDDING_MODEL || undefined } : undefined,
+    ollama: value.OLLAMA_BASE_URL ? { baseUrl: value.OLLAMA_BASE_URL.replace(/\/$/, ''), chatModel: value.OLLAMA_CHAT_MODEL || undefined, embeddingModel: value.OLLAMA_EMBEDDING_MODEL || undefined } : undefined,
     auditLogPath: value.AUDIT_LOG_PATH
   };
 }

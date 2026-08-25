@@ -2,7 +2,14 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { timingSafeEqual } from 'node:crypto';
 import type { AppConfig, Scope } from './config.js';
 
-export interface Principal { id: string; source: 'api_key' | 'authentik'; scopes: Scope[]; expiresAt: number; }
+export interface Principal {
+  id: string;
+  source: 'api_key' | 'authentik';
+  scopes: Scope[];
+  expiresAt: number;
+  email?: string;
+  displayName?: string;
+}
 
 const equal = (left: string, right: string): boolean => {
   const a = Buffer.from(left); const b = Buffer.from(right);
@@ -26,7 +33,14 @@ export class AuthService {
     if (!subject || !payload.exp) throw new Error('Authentik token is missing sub or exp.');
     const rawScopes = payload[this.config.authentik.scopeClaim];
     const scopes = Array.isArray(rawScopes) ? rawScopes : typeof rawScopes === 'string' ? rawScopes.split(' ') : [];
-    return { id: subject, source: 'authentik', scopes: scopes as Scope[], expiresAt: payload.exp };
+    return {
+      id: subject,
+      source: 'authentik',
+      scopes: scopes as Scope[],
+      expiresAt: payload.exp,
+      email: typeof payload.email === 'string' ? payload.email : undefined,
+      displayName: typeof payload.name === 'string' ? payload.name : typeof payload.preferred_username === 'string' ? payload.preferred_username : undefined
+    };
   }
 }
 
