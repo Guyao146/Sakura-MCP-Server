@@ -99,4 +99,21 @@ describeDatabase('PostgreSQL installation integration', () => {
     await service.logout(token);
     await expect(service.authenticate(token)).rejects.toThrow('invalid, expired, or revoked');
   });
+
+  it('persists, searches, versions and soft-deletes Web-managed memories', async () => {
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('web-memory-owner', { email: 'memory@example.com', displayName: 'Memory Owner' });
+    const created = await repository.remember(identity.userId, {
+      spaceId: identity.personalSpaceId, type: 'fact', content: 'Sakura memory integration marker',
+      summary: 'Integration marker', tags: ['integration', 'web'], source: { type: 'web_admin' }
+    });
+    const found = await repository.search(identity.userId, identity.personalSpaceId, 'Sakura memory integration', 10);
+    expect(found.map(item => item.id)).toContain(created.id);
+    const updated = await repository.update(identity.userId, created.id, { summary: 'Updated integration marker' }, 'Web test update');
+    expect(updated.summary).toBe('Updated integration marker');
+    const versions = await database.query<{ version: number }>('SELECT version FROM memory_versions WHERE memory_id=$1 ORDER BY version', [created.id]);
+    expect(versions.rows.map(row => Number(row.version))).toEqual([1, 2]);
+    await repository.forget(identity.userId, created.id, false);
+    await expect(repository.get(identity.userId, created.id)).rejects.toThrow('not found or access denied');
+  });
 });

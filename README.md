@@ -211,6 +211,25 @@ https://mcp.example.com/auth/login
 
 浏览器会话 Cookie 使用 `HttpOnly`、`SameSite=Lax`，HTTPS 部署下同时使用 `Secure`；数据库只保存 Session Token 的 SHA-256 哈希。退出登录后会话立即撤销。
 
+管理后台地址：
+
+```text
+https://mcp.example.com/admin
+```
+
+当前 Web 管理后台支持：
+
+- 查看个人空间和共享空间；
+- 创建共享空间；
+- 查看空间成员并生成邮箱绑定的一次性邀请；
+- 按空间搜索、创建、编辑和软删除记忆；
+- 创建只显示一次的 Agent Key；
+- 查看 Agent scope、前缀、到期、使用和撤销状态；
+- 为 Agent 配置空间级 scopes；
+- 立即撤销 Agent Key。
+
+所有管理 API 都从 HttpOnly Session 解析内部用户身份，不接受客户端传入 `user_id`。写请求还必须提供与 Session ID 绑定的 HMAC-SHA256 CSRF Token；页面中的服务端数据使用 DOM `textContent` 渲染，不将用户内容拼接进 HTML。
+
 如果确需重新安装，应由服务器管理员先完成数据库备份，再通过受控维护流程重置 `installation_state`；不要向 Web 客户端提供“重置安装”按钮。
 
 健康检查：
@@ -272,10 +291,11 @@ npm.cmd start
 - AES-256-GCM 服务端配置加密；
 - 数据库 Agent Key、哈希认证、到期、撤销与空间级 scopes；
 - Authentik Authorization Code + PKCE 浏览器登录与哈希 Session；
+- Web 管理后台：空间、成员邀请、记忆 CRUD、Agent Key 与空间授权；
 
 进行中：
 
-- 完整 React Web 管理后台与 OIDC Browser Session；
+- Provider/空间策略、冲突确认和审计管理页面；
 - 异步自动提取、embedding、混合检索、合并与冲突确认；
 - 导入导出、MCP Resources、审计后台和跨租户安全测试。
 

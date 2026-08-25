@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppConfig } from '../config.js';
 import type { Database } from '../database.js';
@@ -94,6 +94,18 @@ export class WebSessionService {
 
   async logout(token: string | undefined): Promise<void> {
     if (token) await this.database.query('UPDATE web_sessions SET revoked_at=now() WHERE token_hash=$1', [hash(token)]);
+  }
+
+  csrf(identity: WebIdentity): string {
+    return createHmac('sha256', this.getConfig().setup.encryptionKey)
+      .update(`csrf:${identity.sessionId}:${identity.userId}`).digest('base64url');
+  }
+
+  verifyCsrf(identity: WebIdentity, candidate: string | undefined): boolean {
+    if (!candidate) return false;
+    const expected = Buffer.from(this.csrf(identity));
+    const actual = Buffer.from(candidate);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 
   cookie(token: string, maxAge = 43_200): string {

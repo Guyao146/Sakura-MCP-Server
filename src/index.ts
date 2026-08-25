@@ -3,15 +3,21 @@ import { createMcpHonoApp } from '@modelcontextprotocol/hono';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server';
 import type { Context, Next } from 'hono';
 import pino from 'pino';
+import * as z from 'zod/v4';
 import { AuditLogger } from './audit.js';
+import { AgentRepository } from './agents/repository.js';
 import { AuthService } from './auth.js';
 import { loadConfig } from './config.js';
 import { Database } from './database.js';
+import { MemoryRepository } from './memory/repository.js';
+import { SpaceRepository } from './spaces/repository.js';
 import { createServer } from './tools.js';
 import { setupPage } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
 import { SettingsRepository } from './settings/repository.js';
 import { WebSessionService } from './web/session.js';
+import type { WebIdentity } from './web/session.js';
+import { adminPage } from './web/admin-page.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
@@ -23,6 +29,9 @@ let config = await settings.apply(baseConfig);
 let auth = new AuthService(config, database);
 const setup = new SetupService(baseConfig, database, settings);
 const webSessions = new WebSessionService(database, () => config);
+const memories = new MemoryRepository(database);
+const spaces = new SpaceRepository(database);
+const agents = new AgentRepository(database);
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
 const setupGuard = async (context: Context, next: Next) => {
@@ -73,9 +82,18 @@ app.get('/auth/callback', async context => {
   } catch (error) { return context.json({ error: 'callback_failed', error_description: error instanceof Error ? error.message : 'OIDC callback failed.' }, 401); }
 });
 app.post('/auth/logout', async context => {
-  await webSessions.logout(WebSessionService.readCookie(context.req.header('cookie')));
-  context.header('Set-Cookie', webSessions.clearCookie());
-  return context.json({ loggedOut: true });
+  try {
+    const token = WebSessionService.readCookie(context.req.header('cookie'));
+    const identity = await webSessions.authenticate(token);
+    if (!webSessions.verifyCsrf(identity, context.req.header('x-csrf-token'))) {
+      return context.json({ error: 'csrf_failed', error_description: 'CSRF token is missing or invalid.' }, 403);
+    }
+    await webSessions.logout(token);
+    context.header('Set-Cookie', webSessions.clearCookie());
+    return context.json({ loggedOut: true });
+  } catch (error) {
+    return context.json({ error: 'unauthorized', error_description: error instanceof Error ? error.message : 'Unauthorized.' }, 401);
+  }
 });
 app.get('/api/me', async context => {
   try {
@@ -86,11 +104,69 @@ app.get('/api/me', async context => {
 });
 app.get('/admin', async context => {
   try {
-    const identity = await webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));
-    if (!identity.isSystemAdmin) return context.text('Forbidden', 403);
-    return context.html(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Sakura-MCP-Server 管理台</title><style>body{margin:0;background:#0c1017;color:#edf2fa;font:16px/1.6 system-ui}main{max-width:760px;margin:10vh auto;padding:30px;background:#151b26;border:1px solid #293244;border-radius:18px}h1{color:#e58aa3}code{color:#67d6a3}</style><main><h1>Sakura-MCP-Server</h1><h2>管理会话已建立</h2><p>欢迎，${escapeHtml(identity.displayName)}（${escapeHtml(identity.email ?? '')}）。</p><p>下一阶段将在这里提供空间、成员、Agent Key、模型配置、记忆浏览和冲突确认。</p><p>当前身份 API：<code>/api/me</code></p></main></html>`);
+    await adminIdentity(context);
+    return context.html(adminPage);
   } catch { return context.redirect('/auth/login?return_to=/admin'); }
 });
+
+const memoryTypeSchema = z.enum(['fact', 'preference', 'event', 'task', 'person', 'project', 'summary', 'document', 'idea', 'other']);
+const memoryWriteSchema = z.object({
+  space_id: z.string().uuid(), type: memoryTypeSchema.default('other'), content: z.string().min(1).max(1_000_000),
+  summary: z.string().max(2000).default(''), tags: z.array(z.string().min(1).max(80)).max(50).default([])
+});
+const agentScopeSchema = z.array(z.enum([
+  'memory:read', 'memory:write', 'memory:update', 'memory:delete', 'memory:export',
+  'space:create', 'space:manage', 'member:manage', 'agent:manage'
+])).min(1).max(9);
+
+app.get('/api/admin/bootstrap', async context => adminApi(context, false, async identity => ({
+  csrf: webSessions.csrf(identity),
+  me: { id: identity.userId, email: identity.email, displayName: identity.displayName, isSystemAdmin: identity.isSystemAdmin },
+  spaces: await spaces.list(identity.userId), agents: await agents.list(identity.userId)
+})));
+app.get('/api/admin/spaces', async context => adminApi(context, false, identity => spaces.list(identity.userId)));
+app.post('/api/admin/spaces', async context => adminApi(context, true, async identity => {
+  const body = z.object({ name: z.string().min(1).max(120), description: z.string().max(2000).default('') }).parse(await context.req.json());
+  return spaces.create(identity.userId, body.name, body.description);
+}));
+app.get('/api/admin/spaces/:id/members', async context => adminApi(context, false, identity =>
+  spaces.members(identity.userId, z.string().uuid().parse(context.req.param('id')))));
+app.post('/api/admin/spaces/:id/invitations', async context => adminApi(context, true, async identity => {
+  const body = z.object({ email: z.email(), role: z.enum(['admin', 'editor', 'contributor', 'viewer']).default('contributor'), expires_in_hours: z.number().int().min(1).max(168).default(48) }).parse(await context.req.json());
+  return spaces.invite(identity.userId, z.string().uuid().parse(context.req.param('id')), body.email, body.role, body.expires_in_hours);
+}));
+app.get('/api/admin/memories', async context => adminApi(context, false, async identity => {
+  const query = z.object({ space_id: z.string().uuid(), query: z.string().max(2000).default('') }).parse(context.req.query());
+  return { memories: await memories.search(identity.userId, query.space_id, query.query, 100) };
+}));
+app.post('/api/admin/memories', async context => adminApi(context, true, async identity => {
+  const body = memoryWriteSchema.parse(await context.req.json());
+  return memories.remember(identity.userId, { spaceId: body.space_id, type: body.type, content: body.content,
+    summary: body.summary, tags: body.tags, source: { type: 'web_admin', agent: identity.subject } });
+}));
+app.patch('/api/admin/memories/:id', async context => adminApi(context, true, async identity => {
+  const id = z.string().uuid().parse(context.req.param('id'));
+  const body = memoryWriteSchema.omit({ space_id: true, type: true }).partial().parse(await context.req.json());
+  return memories.update(identity.userId, id, body, 'updated through Web management');
+}));
+app.delete('/api/admin/memories/:id', async context => adminApi(context, true, async identity => {
+  const id = z.string().uuid().parse(context.req.param('id'));
+  await memories.forget(identity.userId, id, false);
+  return { deleted: true };
+}));
+app.get('/api/admin/agents', async context => adminApi(context, false, identity => agents.list(identity.userId)));
+app.post('/api/admin/agents', async context => adminApi(context, true, async identity => {
+  const body = z.object({ name: z.string().min(1).max(120), scopes: agentScopeSchema, expires_at: z.iso.datetime().optional() }).parse(await context.req.json());
+  return agents.create(identity.userId, body.name, body.scopes, body.expires_at);
+}));
+app.post('/api/admin/agents/:id/revoke', async context => adminApi(context, true, async identity => {
+  await agents.revoke(identity.userId, z.string().uuid().parse(context.req.param('id')));
+  return { revoked: true };
+}));
+app.post('/api/admin/agents/:id/grants', async context => adminApi(context, true, async identity => {
+  const body = z.object({ space_id: z.string().uuid(), scopes: agentScopeSchema }).parse(await context.req.json());
+  return agents.grant(identity.userId, z.string().uuid().parse(context.req.param('id')), body.space_id, body.scopes);
+}));
 
 app.get('/health', async context => {
   try {
@@ -123,6 +199,20 @@ app.all('/mcp', async context => {
 
 serve({ fetch: app.fetch, hostname: baseConfig.host, port: baseConfig.port }, info => logger.info({ host: baseConfig.host, port: info.port }, 'Sakura MCP Server listening'));
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!);
+async function adminIdentity(context: Context): Promise<WebIdentity> {
+  return webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));
+}
+
+async function adminApi(context: Context, write: boolean, handler: (identity: WebIdentity) => Promise<unknown>): Promise<Response> {
+  try {
+    const identity = await adminIdentity(context);
+    if (write && !webSessions.verifyCsrf(identity, context.req.header('x-csrf-token'))) {
+      return context.json({ error: 'csrf_failed', error_description: 'CSRF token is missing or invalid.' }, 403);
+    }
+    return context.json(await handler(identity));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request failed.';
+    const unauthorized = /session is|session is missing/i.test(message);
+    return context.json({ error: unauthorized ? 'unauthorized' : 'request_failed', error_description: message }, unauthorized ? 401 : 400);
+  }
 }
