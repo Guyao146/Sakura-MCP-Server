@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.8
+ghcr.io/guyao146/sakura-mcp-server:0.2.9
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,14 +351,14 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.8
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.9
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
 
 Compose 默认：
 
-- 应用绑定 `127.0.0.1:3000`；
+- 应用默认绑定 `127.0.0.1:3001`，转发到容器内部 `3000`；
 - PostgreSQL 只在 Compose 内部网络；
 - `host.docker.internal` 映射到 Docker 宿主机，便于访问宿主机 Ollama；
 - PostgreSQL 数据保存在命名卷 `sakura-mcp-server_postgres-data`；
@@ -489,7 +489,7 @@ https://mcp.example.com/admin
 curl https://mcp.example.com/health
 ```
 
-生产环境使用 `nginx-mcp.conf.example` 提供 HTTPS，仅开放 443，不直接暴露 PostgreSQL 和 3000 端口。
+生产环境使用 `nginx-mcp.conf.example` 提供 HTTPS，仅开放 443，不直接暴露 PostgreSQL 和 3001 端口。
 
 生产环境在应用只能由可信 Nginx 访问时设置 `TRUST_PROXY=true`，否则保持默认 `false`，防止客户端伪造 `X-Forwarded-For` 绕过限流。应用提供 CSP、HSTS、点击劫持、MIME sniffing、Referrer 和 Permissions Policy 安全头，并对 MCP、登录、安装和管理 API 使用独立限额。
 

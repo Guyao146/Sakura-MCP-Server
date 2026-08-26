@@ -68,7 +68,7 @@ services:
       retries: 10
 
   sakura-mcp:
-    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.8}
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.9}
     container_name: sakura-mcp-server-app
     pull_policy: always
     restart: unless-stopped
@@ -111,7 +111,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${MCP_HOST_PORT:-3001}:3000"
     volumes:
       - runtime-secrets:/run/sakura-secrets:ro
       - ./data:/app/data

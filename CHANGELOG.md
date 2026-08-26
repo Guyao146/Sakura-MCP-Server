@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.9] - 2026-08-26
+
+### Fixed
+
+- Use host port 3001 by default so the service does not conflict with LibreChat on host port 3000.
+- Keep the internal application port at 3000 and make the host port configurable with `MCP_HOST_PORT`.
+
 ## [0.2.8] - 2026-08-26
 
 ### Fixed
