@@ -39,7 +39,7 @@ jobs:
           POSTGRES_PASSWORD: ci-compose-password
         run: docker compose config --quiet
       - name: Scan container image
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: sakura-mcp-server:ci
           format: table
