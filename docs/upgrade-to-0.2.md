@@ -25,7 +25,7 @@ docker compose logs -f sakura-mcp
 
 Windows Docker Desktop 用户可以运行 `scripts/install.ps1`；PowerShell 执行策略受限时，先执行 `Set-ExecutionPolicy -Scope Process Bypass`。生产模式会拉取 GHCR 镜像，只有显式传入 `-LocalBuild` 才会本地构建。
 
-生产 `docker-compose.yml` 默认拉取 `ghcr.io/guyao146/sakura-mcp-server:0.2.3`，不需要服务器保存源码或安装 Node.js，也不要求预先创建 `.env`。Compose 会由一次性 `bootstrap-secrets` 容器生成持久化运行密钥。源码开发/本地构建请额外使用 `docker-compose.dev.yml`。
+生产 `docker-compose.yml` 默认拉取 `ghcr.io/guyao146/sakura-mcp-server:0.2.4`，不需要服务器保存源码或安装 Node.js，也不要求预先创建 `.env`。Compose 会由一次性 `bootstrap-secrets` 容器生成持久化运行密钥。源码开发/本地构建请额外使用 `docker-compose.dev.yml`。
 
 首次启动后，可用 `docker compose run --rm --no-deps --entrypoint sh bootstrap-secrets -c 'cat /secrets/app.env'` 在安全终端读取 `SETUP_TOKEN`，然后访问 `/setup`；请长期备份 `CONFIG_ENCRYPTION_KEY`。
 

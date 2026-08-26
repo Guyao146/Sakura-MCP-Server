@@ -53,6 +53,10 @@ services:
     depends_on:
       bootstrap-secrets:
         condition: service_completed_successfully
+    networks:
+      default:
+        aliases:
+          - postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - runtime-secrets:/run/sakura-secrets:ro
@@ -63,7 +67,7 @@ services:
       retries: 10
 
   sakura-mcp:
-    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.3}
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.4}
     pull_policy: always
     restart: unless-stopped
     environment:
@@ -97,6 +101,10 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - sakura-mcp
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -117,3 +125,7 @@ services:
 volumes:
   postgres-data:
   runtime-secrets:
+
+networks:
+  default:
+    name: sakura-mcp-server-network

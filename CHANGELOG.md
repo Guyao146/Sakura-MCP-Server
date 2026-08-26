@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.4] - 2026-08-26
+
+### Fixed
+
+- Retry PostgreSQL DNS/connection failures during application startup instead of entering a restart loop when Compose starts services concurrently.
+- Add an explicit Compose network and `postgres` service alias for panel-managed deployments.
+
 ## [0.2.3] - 2026-08-26
 
 ### Fixed

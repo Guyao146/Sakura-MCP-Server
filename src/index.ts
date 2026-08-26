@@ -28,7 +28,10 @@ import { RateLimiter, securityHeaders } from './security/http.js';
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
 const database = new Database(baseConfig.database.connectionString, baseConfig.database.maxConnections);
-if (baseConfig.database.autoMigrate) await database.migrate();
+if (baseConfig.database.autoMigrate) {
+  logger.info({ attempts: 30 }, 'Waiting for PostgreSQL and applying migrations');
+  await database.migrateWithRetry(`${process.cwd()}/migrations`);
+}
 const audit = new AuditLogger(baseConfig.auditLogPath, database);
 const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
 let config = await settings.apply(baseConfig);

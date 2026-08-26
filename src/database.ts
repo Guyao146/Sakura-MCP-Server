@@ -28,5 +28,21 @@ export class Database {
       finally { client.release(); }
     }
   }
+
+  async migrateWithRetry(directory: string, attempts = 30, delayMs = 2000): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.migrate(directory);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) break;
+        const wait = Math.min(delayMs, 5000);
+        await new Promise(resolve => setTimeout(resolve, wait));
+      }
+    }
+    throw lastError instanceof Error ? new Error(`Database was not ready after ${attempts} attempts: ${lastError.message}`, { cause: lastError }) : lastError;
+  }
   close(): Promise<void> { return this.pool.end(); }
 }
