@@ -4,11 +4,12 @@ import type { Principal } from './auth.js';
 import { requireScopes } from './auth.js';
 import { AgentRepository } from './agents/repository.js';
 import type { AuditLogger } from './audit.js';
-import type { Scope } from './config.js';
+import type { AppConfig, Scope } from './config.js';
 import type { Database } from './database.js';
 import { MemoryRepository } from './memory/repository.js';
 import { requireAgentSpaceScope } from './memory/permissions.js';
 import { SpaceRepository } from './spaces/repository.js';
+import { SemanticMemoryService } from './semantic/service.js';
 
 const memoryType = z.enum(['fact', 'preference', 'event', 'task', 'person', 'project', 'summary', 'document', 'idea', 'other']);
 const text = (value: unknown) => ({
@@ -17,9 +18,10 @@ const text = (value: unknown) => ({
 });
 const failure = (message: string) => ({ content: [{ type: 'text' as const, text: message }], isError: true });
 
-export function createServer(database: Database, principal: Principal, audit: AuditLogger): McpServer {
+export function createServer(database: Database, principal: Principal, audit: AuditLogger, getConfig: () => AppConfig): McpServer {
   const server = new McpServer({ name: 'Sakura-MCP-Server', version: '0.2.0' });
   const repository = new MemoryRepository(database);
+  const semantic = new SemanticMemoryService(database, getConfig);
   const agents = new AgentRepository(database);
   const spaces = new SpaceRepository(database);
   const identity = repository.ensureUser(principal.id, { email: principal.email, displayName: principal.displayName });
@@ -54,7 +56,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   }, guarded('memory_remember', ['memory:write'], async (args, userId, personalSpaceId) => {
     const spaceId = args.space_id ?? personalSpaceId;
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:write');
-    return repository.remember(userId, {
+    return semantic.remember(userId, {
     spaceId, type: args.type, content: args.content, summary: args.summary, tags: args.tags,
     importance: args.importance, confidence: args.confidence, sensitivity: args.sensitivity, validFrom: args.valid_from,
     validUntil: args.valid_until, expiresAt: args.expires_at,
@@ -68,7 +70,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   }, guarded('memory_search', ['memory:read'], async (args, userId, personalSpaceId) => {
     const spaceId = args.space_id ?? personalSpaceId;
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
-    return repository.search(userId, spaceId, args.query, args.limit, args.types, args.tags);
+    return semantic.hybridSearch(userId, spaceId, args.query, args.limit, args.types, args.tags);
   }));
 
   server.registerTool('memory_recall', {
@@ -77,7 +79,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   }, guarded('memory_recall', ['memory:read'], async (args, userId, personalSpaceId) => {
     const spaceId = args.space_id ?? personalSpaceId;
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
-    return repository.search(userId, spaceId, args.context, args.limit);
+    return semantic.hybridSearch(userId, spaceId, args.context, args.limit);
   }));
 
   server.registerTool('memory_get', {
@@ -94,7 +96,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   }, guarded('memory_update', ['memory:update'], async (args, userId) => {
     const spaceId = await repository.spaceForMemory(userId, args.memory_id);
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:update');
-    return repository.update(userId, args.memory_id, {
+    return semantic.update(userId, args.memory_id, {
       content: args.content, summary: args.summary, tags: args.tags, importance: args.importance, confidence: args.confidence, status: args.status
     }, args.reason);
   }));
@@ -107,6 +109,24 @@ export function createServer(database: Database, principal: Principal, audit: Au
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:delete');
     await repository.forget(userId, args.memory_id, args.permanent);
     return { forgotten: true, permanent: args.permanent };
+  }));
+
+  server.registerTool('memory_extract', {
+    description: 'Extract durable candidate memories from text using the Chat Provider configured for the target space. Does not store them.',
+    inputSchema: { space_id: z.string().uuid().optional(), text: z.string().min(1).max(200_000) }
+  }, guarded('memory_extract', ['memory:write'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:write');
+    return { candidates: await semantic.extract(userId, spaceId, args.text) };
+  }));
+
+  server.registerTool('memory_extract_and_remember', {
+    description: 'Extract durable memories from text and store up to 50 validated candidates in an authorized space.',
+    inputSchema: { space_id: z.string().uuid().optional(), text: z.string().min(1).max(200_000) }
+  }, guarded('memory_extract_and_remember', ['memory:write'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:write');
+    return { memories: await semantic.extractAndRemember(userId, spaceId, args.text, principal.id) };
   }));
 
   server.registerTool('space_list', {

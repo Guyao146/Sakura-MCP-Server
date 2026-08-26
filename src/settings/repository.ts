@@ -32,6 +32,16 @@ export class SettingsRepository {
     return { ...base, authentik: authentik ?? base.authentik, openaiCompatible: openaiCompatible ?? base.openaiCompatible, ollama: ollama ?? base.ollama };
   }
 
+  async saveProvider(kind: 'openai_compatible' | 'ollama', value: AppConfig['openaiCompatible'] | AppConfig['ollama']): Promise<void> {
+    if (!value) throw new Error('Provider configuration is required.');
+    const key = `provider.${kind}`;
+    const stored = kind === 'openai_compatible' ? this.cipher.encrypt(value) : value;
+    await this.database.query(
+      `INSERT INTO system_settings(key,value,encrypted) VALUES($1,$2,$3)
+       ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,encrypted=EXCLUDED.encrypted,updated_at=now()`,
+      [key, stored, kind === 'openai_compatible']);
+  }
+
   async complete(input: {
     administratorEmail: string;
     authentik: NonNullable<AppConfig['authentik']>;

@@ -11,6 +11,7 @@ import { loadConfig } from './config.js';
 import { Database } from './database.js';
 import { MemoryRepository } from './memory/repository.js';
 import { SpaceRepository } from './spaces/repository.js';
+import { SemanticMemoryService } from './semantic/service.js';
 import { createServer } from './tools.js';
 import { setupPage } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
@@ -32,6 +33,7 @@ const webSessions = new WebSessionService(database, () => config);
 const memories = new MemoryRepository(database);
 const spaces = new SpaceRepository(database);
 const agents = new AgentRepository(database);
+const semantic = new SemanticMemoryService(database, () => config);
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
 const setupGuard = async (context: Context, next: Next) => {
@@ -135,19 +137,29 @@ app.post('/api/admin/spaces/:id/invitations', async context => adminApi(context,
   const body = z.object({ email: z.email(), role: z.enum(['admin', 'editor', 'contributor', 'viewer']).default('contributor'), expires_in_hours: z.number().int().min(1).max(168).default(48) }).parse(await context.req.json());
   return spaces.invite(identity.userId, z.string().uuid().parse(context.req.param('id')), body.email, body.role, body.expires_in_hours);
 }));
+app.get('/api/admin/spaces/:id/strategy', async context => adminApi(context, false, identity =>
+  semantic.strategy(identity.userId, z.string().uuid().parse(context.req.param('id')))));
+app.put('/api/admin/spaces/:id/strategy', async context => adminApi(context, true, async identity => {
+  const body = z.object({
+    providerType: z.enum(['openai_compatible', 'ollama']).optional(), chatModel: z.string().max(200).optional(),
+    embeddingModel: z.string().max(200).optional(), autoExtractEnabled: z.boolean().default(false),
+    autoMergeEnabled: z.boolean().default(false), conflictDetectionEnabled: z.boolean().default(true), privacyMode: z.boolean().default(false)
+  }).parse(await context.req.json());
+  return semantic.configureStrategy(identity.userId, z.string().uuid().parse(context.req.param('id')), body);
+}));
 app.get('/api/admin/memories', async context => adminApi(context, false, async identity => {
   const query = z.object({ space_id: z.string().uuid(), query: z.string().max(2000).default('') }).parse(context.req.query());
-  return { memories: await memories.search(identity.userId, query.space_id, query.query, 100) };
+  return { memories: await semantic.hybridSearch(identity.userId, query.space_id, query.query, 100) };
 }));
 app.post('/api/admin/memories', async context => adminApi(context, true, async identity => {
   const body = memoryWriteSchema.parse(await context.req.json());
-  return memories.remember(identity.userId, { spaceId: body.space_id, type: body.type, content: body.content,
+  return semantic.remember(identity.userId, { spaceId: body.space_id, type: body.type, content: body.content,
     summary: body.summary, tags: body.tags, source: { type: 'web_admin', agent: identity.subject } });
 }));
 app.patch('/api/admin/memories/:id', async context => adminApi(context, true, async identity => {
   const id = z.string().uuid().parse(context.req.param('id'));
   const body = memoryWriteSchema.omit({ space_id: true, type: true }).partial().parse(await context.req.json());
-  return memories.update(identity.userId, id, body, 'updated through Web management');
+  return semantic.update(identity.userId, id, body, 'updated through Web management');
 }));
 app.delete('/api/admin/memories/:id', async context => adminApi(context, true, async identity => {
   const id = z.string().uuid().parse(context.req.param('id'));
@@ -166,6 +178,26 @@ app.post('/api/admin/agents/:id/revoke', async context => adminApi(context, true
 app.post('/api/admin/agents/:id/grants', async context => adminApi(context, true, async identity => {
   const body = z.object({ space_id: z.string().uuid(), scopes: agentScopeSchema }).parse(await context.req.json());
   return agents.grant(identity.userId, z.string().uuid().parse(context.req.param('id')), body.space_id, body.scopes);
+}));
+app.get('/api/admin/providers', async context => adminApi(context, false, async identity => {
+  if (!identity.isSystemAdmin) throw new Error('System administrator permission is required.');
+  return {
+    openaiCompatible: config.openaiCompatible ? { configured: true, baseUrl: config.openaiCompatible.baseUrl,
+      chatModel: config.openaiCompatible.chatModel, embeddingModel: config.openaiCompatible.embeddingModel, hasApiKey: Boolean(config.openaiCompatible.apiKey) } : { configured: false },
+    ollama: config.ollama ? { configured: true, baseUrl: config.ollama.baseUrl,
+      chatModel: config.ollama.chatModel, embeddingModel: config.ollama.embeddingModel } : { configured: false }
+  };
+}));
+app.put('/api/admin/providers/:kind', async context => adminApi(context, true, async identity => {
+  if (!identity.isSystemAdmin) throw new Error('System administrator permission is required.');
+  const kind = z.enum(['openai_compatible', 'ollama']).parse(context.req.param('kind'));
+  const body = z.object({ baseUrl: z.url(), apiKey: z.string().max(1000).optional(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).parse(await context.req.json());
+  if (kind === 'openai_compatible' && !body.apiKey && config.openaiCompatible?.apiKey) body.apiKey = config.openaiCompatible.apiKey;
+  await settings.saveProvider(kind, { baseUrl: body.baseUrl.replace(/\/$/, ''), apiKey: kind === 'openai_compatible' ? body.apiKey : undefined,
+    chatModel: body.chatModel, embeddingModel: body.embeddingModel });
+  config = await settings.apply(baseConfig);
+  auth = new AuthService(config, database);
+  return { saved: true };
 }));
 
 app.get('/health', async context => {
@@ -188,7 +220,7 @@ app.all('/mcp', async context => {
     const message = error instanceof Error ? error.message : 'Unauthorized.';
     return context.json({ error: 'unauthorized', error_description: message }, 401, { 'WWW-Authenticate': `Bearer resource_metadata="${config.publicBaseUrl}/.well-known/oauth-protected-resource/mcp"` });
   }
-  const server = createServer(database, principal, audit);
+  const server = createServer(database, principal, audit, () => config);
   // Stateless transport prevents one authenticated client's session from being reused by another principal.
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);

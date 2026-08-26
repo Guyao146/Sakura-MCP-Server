@@ -81,11 +81,13 @@ Agent 只能列出明确授权的空间；撤销后下一次请求立即失效�
 
 ```text
 memory_remember             写入结构化长期记忆
-memory_search               全文搜索与过滤
-memory_recall               根据当前上下文召回
+memory_search               全文 + pgvector 混合搜索与过滤
+memory_recall               根据当前上下文进行语义召回
 memory_get                  获取单条记忆
 memory_update               更新并保留版本
 memory_forget               软删除或管理员永久删除
+memory_extract              从文本提取候选长期记忆（不保存）
+memory_extract_and_remember 从文本提取并保存长期记忆
 space_list                  列出个人与共享空间
 space_create                创建共享空间
 space_list_members          查看成员与角色
@@ -98,7 +100,7 @@ agent_grant_space           配置空间级权限
 agent_revoke_space          移除空间级权限
 ```
 
-后续工具：`memory_link`、`memory_ingest`、`memory_conflicts`、`memory_feedback`、`memory_export` 和空间策略管理。
+后续工具：`memory_link`、`memory_ingest`、`memory_conflicts`、`memory_feedback` 和 `memory_export`。
 
 ## 记忆数据模型
 
@@ -140,6 +142,31 @@ OLLAMA_EMBEDDING_MODEL=
 ```
 
 每个空间最终可独立选择 Provider、模型和是否启用自动提取。更换 embedding 模型时通过后台任务重新生成向量；模型调用失败不丢失原始记忆。
+
+### 混合检索
+
+配置空间的 Embedding Provider 后，`memory_search` 和 `memory_recall` 使用以下混合评分：
+
+```text
+60% 向量余弦相似度
+25% PostgreSQL 全文相关度
+10% 记忆重要性
+ 5% 记忆置信度
+```
+
+未配置 Provider、模型服务不可用或查询向量失败时，会明确回退到全文检索。创建和更新记忆时会生成/重建向量；失败会把 `memory_embeddings.status` 标记为 `failed` 并记录错误，但原始记忆、来源和版本不会丢失。
+
+空间 AI 策略可在 Web 管理台配置：
+
+- Provider 类型；
+- Chat Model；
+- Embedding Model；
+- 自动提取；
+- 自动合并；
+- 冲突检测；
+- 隐私模式。
+
+隐私模式只允许本地 Ollama，拒绝把内容发送至 OpenAI-compatible Provider。不同空间可以使用不同维度的向量，因此当前使用精确 pgvector 检索；后续将按 Provider/模型/维度分区建立 HNSW 索引。
 
 ## Docker 部署
 
@@ -292,11 +319,14 @@ npm.cmd start
 - 数据库 Agent Key、哈希认证、到期、撤销与空间级 scopes；
 - Authentik Authorization Code + PKCE 浏览器登录与哈希 Session；
 - Web 管理后台：空间、成员邀请、记忆 CRUD、Agent Key 与空间授权；
+- OpenAI-compatible/Ollama Provider 管理与空间级 AI 策略；
+- 记忆 Embedding、pgvector 混合检索和故障安全回退；
+- LLM 候选记忆提取与批量保存；
 
 进行中：
 
 - Provider/空间策略、冲突确认和审计管理页面；
-- 异步自动提取、embedding、混合检索、合并与冲突确认；
+- 异步任务队列、自动合并与冲突确认；
 - 导入导出、MCP Resources、审计后台和跨租户安全测试。
 
 未完成的功能不会以伪造数据或静默降级方式对外宣称可用。

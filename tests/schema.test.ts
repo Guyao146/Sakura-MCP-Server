@@ -35,4 +35,11 @@ describe('memory database schema', () => {
     expect(sql).toContain('state_hash text PRIMARY KEY');
     expect(sql).toContain('token_hash text UNIQUE NOT NULL');
   });
+
+  it('allows failed semantic jobs without fake vectors', async () => {
+    const sql = await readFile(new URL('../migrations/004_semantic_memory.sql', import.meta.url), 'utf8');
+    expect(sql).toContain('ADD COLUMN provider_type provider_type');
+    expect(sql).toContain('ALTER COLUMN embedding DROP NOT NULL');
+    expect(sql).toContain("status IN ('pending', 'failed')");
+  });
 });

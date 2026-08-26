@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Database } from '../src/database.js';
 import { MemoryRepository } from '../src/memory/repository.js';
 import { SettingsRepository } from '../src/settings/repository.js';
@@ -8,6 +8,7 @@ import { loadConfig } from '../src/config.js';
 import { requireAgentSpaceScope } from '../src/memory/permissions.js';
 import { SpaceRepository } from '../src/spaces/repository.js';
 import { WebSessionService } from '../src/web/session.js';
+import { SemanticMemoryService } from '../src/semantic/service.js';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -19,12 +20,13 @@ describeDatabase('PostgreSQL installation integration', () => {
 
   beforeAll(async () => { await database.migrate(); }, 30_000);
   afterAll(async () => { await database.close(); });
+  afterEach(() => vi.unstubAllGlobals());
 
   it('applies pgvector and every ordered migration', async () => {
     const extension = await database.query<{ extversion: string }>("SELECT extversion FROM pg_extension WHERE extname='vector'");
     const migrations = await database.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(extension.rows[0].extversion).toBeTruthy();
-    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql']);
+    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql']);
     await expect(settings.installation()).resolves.toMatchObject({ completed: false });
   });
 
@@ -115,5 +117,59 @@ describeDatabase('PostgreSQL installation integration', () => {
     expect(versions.rows.map(row => Number(row.version))).toEqual([1, 2]);
     await repository.forget(identity.userId, created.id, false);
     await expect(repository.get(identity.userId, created.id)).rejects.toThrow('not found or access denied');
+  });
+
+  it('embeds memories and performs pgvector hybrid recall', async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'v'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: '', OLLAMA_BASE_URL: 'http://ollama.test',
+      OLLAMA_CHAT_MODEL: 'chat-test', OLLAMA_EMBEDDING_MODEL: 'embed-test'
+    });
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('semantic-owner', { email: 'semantic@example.com', displayName: 'Semantic Owner' });
+    const semantic = new SemanticMemoryService(database, () => config);
+    await semantic.configureStrategy(identity.userId, identity.personalSpaceId, {
+      providerType: 'ollama', chatModel: 'chat-test', embeddingModel: 'embed-test', autoExtractEnabled: false,
+      autoMergeEnabled: false, conflictDetectionEnabled: true, privacyMode: true
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ embeddings: [[1, 0, 0]] }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    })));
+    const stored = await semantic.remember(identity.userId, {
+      spaceId: identity.personalSpaceId, type: 'preference', content: 'User prefers sakura tea', summary: 'Tea preference', tags: ['tea']
+    });
+    expect(stored.embeddingStatus).toBe('ready');
+    const embedding = await database.query<{ status: string; dimensions: number; vector: string }>(
+      'SELECT status,dimensions,embedding::text AS vector FROM memory_embeddings WHERE memory_id=$1', [stored.id]);
+    expect(embedding.rows[0]).toMatchObject({ status: 'ready', dimensions: 3, vector: '[1,0,0]' });
+    const recalled = await semantic.hybridSearch(identity.userId, identity.personalSpaceId, 'favorite drink', 10);
+    expect(recalled.map(item => item.id)).toContain(stored.id);
+    await expect(semantic.configureStrategy(identity.userId, identity.personalSpaceId, {
+      providerType: 'openai_compatible', autoExtractEnabled: false, autoMergeEnabled: false,
+      conflictDetectionEnabled: true, privacyMode: true
+    })).rejects.toThrow('Privacy mode only permits');
+  });
+
+  it('keeps raw memory when embedding fails', async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'f'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: '', OLLAMA_BASE_URL: 'http://ollama.failure',
+      OLLAMA_EMBEDDING_MODEL: 'broken-model'
+    });
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('embedding-failure-owner', { displayName: 'Failure Owner' });
+    const semantic = new SemanticMemoryService(database, () => config);
+    await semantic.configureStrategy(identity.userId, identity.personalSpaceId, {
+      providerType: 'ollama', embeddingModel: 'broken-model', autoExtractEnabled: false,
+      autoMergeEnabled: false, conflictDetectionEnabled: true, privacyMode: true
+    });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Ollama unavailable')));
+    const stored = await semantic.remember(identity.userId, {
+      spaceId: identity.personalSpaceId, type: 'fact', content: 'This raw memory must survive'
+    });
+    expect(stored.embeddingStatus).toBe('failed');
+    await expect(repository.get(identity.userId, stored.id)).resolves.toMatchObject({ content: 'This raw memory must survive' });
+    const status = await database.query<{ status: string; embedding: string | null }>('SELECT status,embedding::text FROM memory_embeddings WHERE memory_id=$1', [stored.id]);
+    expect(status.rows[0]).toMatchObject({ status: 'failed', embedding: null });
   });
 });
