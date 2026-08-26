@@ -21,6 +21,8 @@ docker compose up -d --build
 docker compose logs -f sakura-mcp
 ```
 
+新部署也可以直接运行仓库中的 `scripts/install.sh`。脚本只适用于没有 `.env` 的首次部署，发现已有 `.env` 会停止，不会覆盖现有密钥。
+
 With `AUTO_MIGRATE=true`, migrations run in filename order at startup. Do not delete entries from `schema_migrations`.
 
 For a fresh 0.2 deployment, visit `/setup`. An installation already marked complete will return `410 setup_locked` and cannot be reset through the browser.

@@ -263,16 +263,54 @@ Web 管理后台新增“审计日志”页面，支持空间、动作、结果�
 
 ## Docker 部署
 
-要求 Docker Compose，配置包含 PostgreSQL 16 + pgvector 与 MCP 服务。
+要求 Docker Compose v2，编排包含 PostgreSQL 16 + pgvector 与 MCP 服务。仓库提供了安全的 Linux 首次安装脚本，会自动生成随机数据库密码、安装令牌和配置加密主密钥；密钥只写入本机 `.env`，不会进入 Git。
+
+### 一键初始化（Linux）
 
 ```bash
 git clone https://github.com/Guyao146/Sakura-MCP-Server.git
+cd Sakura-MCP-Server
+chmod +x scripts/install.sh
+./scripts/install.sh https://mcp.example.com
+```
+
+也可以不传参数，脚本会交互询问 HTTPS 地址：
+
+```bash
+./scripts/install.sh
+```
+
+脚本会执行：
+
+1. 检查 Docker 和 Compose v2；
+2. 拒绝覆盖已有 `.env`；
+3. 生成随机数据库密码、`SETUP_TOKEN`、`CONFIG_ENCRYPTION_KEY` 和 bootstrap API Key；
+4. 创建权限为 `600` 的 `.env` 和 `700` 的 `data/`；
+5. 执行 `docker compose up -d --build`；
+6. 输出安装向导和健康检查地址。
+
+脚本不会输出任何生成的 Secret。执行后请先配置 HTTPS Nginx，再访问 `/setup`。
+
+### 手工部署
+
+如果不使用初始化脚本，仍可手工配置：
+
+```bash
 cd Sakura-MCP-Server
 cp .env.example .env
 # 修改数据库密码、PUBLIC_BASE_URL，并生成 SETUP_TOKEN 和 CONFIG_ENCRYPTION_KEY
 chmod 600 .env
 docker compose up -d --build
 ```
+
+Compose 默认：
+
+- 应用绑定 `127.0.0.1:3000`；
+- PostgreSQL 只在 Compose 内部网络；
+- `host.docker.internal` 映射到 Docker 宿主机，便于访问宿主机 Ollama；
+- PostgreSQL 数据保存在命名卷 `sakura-mcp-server_postgres-data`；
+- 审计 JSONL 保存在当前目录 `data/`；
+- 应用使用只读文件系统、非 root 用户、丢弃全部 Linux capabilities 和 PID 限制。
 
 生成安装密钥：
 
