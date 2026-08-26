@@ -5,7 +5,13 @@ server {
 
     # ssl_certificate /etc/letsencrypt/live/mcp.example.com/fullchain.pem;
     # ssl_certificate_key /etc/letsencrypt/live/mcp.example.com/privkey.pem;
-    client_max_body_size 1m;
+    client_max_body_size 6m;
+    server_tokens off;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     location = /mcp {
         proxy_pass http://127.0.0.1:3000;
@@ -15,6 +21,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header Authorization $http_authorization;
         proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
         proxy_buffering off;
     }
     location = /setup { proxy_pass http://127.0.0.1:3000; }

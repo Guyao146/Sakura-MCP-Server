@@ -29,7 +29,20 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
         env:
           DATABASE_TEST_URL: postgresql://sakura:test-password@127.0.0.1:5432/sakura_test
       - run: docker build --tag sakura-mcp-server:ci .
+      - name: Validate Docker Compose
+        env:
+          POSTGRES_PASSWORD: ci-compose-password
+        run: docker compose config --quiet
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: sakura-mcp-server:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

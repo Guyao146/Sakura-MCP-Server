@@ -312,4 +312,28 @@ describeDatabase('PostgreSQL installation integration', () => {
     expect(stored.rows[0].metadata).toMatchObject({ apiKey: '[REDACTED]', content: '[REDACTED]', safe: 'ok' });
     await unlink(path).catch(() => undefined);
   });
+
+  it('blocks cross-tenant memory, job, Agent and export access', async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'x'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
+    });
+    const memories = new MemoryRepository(database);
+    const tenantA = await memories.ensureUser('tenant-matrix-a', { displayName: 'Tenant A' });
+    const tenantB = await memories.ensureUser('tenant-matrix-b', { displayName: 'Tenant B' });
+    const privateMemory = await memories.remember(tenantB.userId, {
+      spaceId: tenantB.personalSpaceId, type: 'fact', content: 'Tenant B private fact'
+    });
+    await expect(memories.get(tenantA.userId, privateMemory.id)).rejects.toThrow('not found or access denied');
+    await expect(memories.search(tenantA.userId, tenantB.personalSpaceId, '', 10)).rejects.toThrow('access denied');
+    const jobs = new JobRepository(database);
+    const job = await jobs.enqueue(tenantB.userId, tenantB.personalSpaceId, 'rebuild_embeddings');
+    await expect(jobs.get(tenantA.userId, job.id)).rejects.toThrow('not found or access denied');
+    const agents = new AgentRepository(database);
+    const agentB = await agents.create(tenantB.userId, 'Tenant B Agent', ['memory:read']);
+    await expect(agents.revoke(tenantA.userId, agentB.id)).rejects.toThrow('not found or already revoked');
+    await expect(agents.grant(tenantA.userId, agentB.id, tenantA.personalSpaceId, ['memory:read'])).rejects.toThrow('not found or revoked');
+    const transfer = new MemoryTransferService(database, new SemanticMemoryService(database, () => config), new MemoryGovernanceService(database));
+    await expect(transfer.export(tenantA.userId, tenantB.personalSpaceId, 'json')).rejects.toThrow('access denied');
+  });
 });

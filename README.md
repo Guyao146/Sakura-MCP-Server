@@ -360,6 +360,18 @@ curl https://mcp.example.com/health
 
 生产环境使用 `nginx-mcp.conf.example` 提供 HTTPS，仅开放 443，不直接暴露 PostgreSQL 和 3000 端口。
 
+生产环境在应用只能由可信 Nginx 访问时设置 `TRUST_PROXY=true`，否则保持默认 `false`，防止客户端伪造 `X-Forwarded-For` 绕过限流。应用提供 CSP、HSTS、点击劫持、MIME sniffing、Referrer 和 Permissions Policy 安全头，并对 MCP、登录、安装和管理 API 使用独立限额。
+
+```dotenv
+TRUST_PROXY=true
+RATE_LIMIT_MCP_PER_MINUTE=120
+RATE_LIMIT_WEB_PER_MINUTE=300
+RATE_LIMIT_AUTH_PER_MINUTE=20
+RATE_LIMIT_SETUP_PER_MINUTE=10
+```
+
+详细升级步骤见 [`docs/upgrade-to-0.2.md`](docs/upgrade-to-0.2.md)，版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+
 ## Agent 连接
 
 MCP URL：
@@ -419,6 +431,7 @@ npm.cmd start
 - JSON/Markdown 导入导出、任务错误报告与 MCP Resources；
 - PostgreSQL 持久化 Worker、并发安全领取、取消、重试和批量向量重建；
 - PostgreSQL/JSONL 统一安全审计、递归脱敏、租户过滤和审计后台；
+- HTTP 安全头、分级限流、可信代理模式、详细健康检查和容器安全扫描；
 
 进行中：
 

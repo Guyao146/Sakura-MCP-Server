@@ -28,6 +28,10 @@ services:
       - ./data:/app/data
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    stop_grace_period: 30s
     read_only: true
     tmpfs:
       - /tmp

@@ -28,12 +28,10 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@fastify/cors": "^11.3.0",
+    "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/hono": "^2.0.0",
-    "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "dotenv": "^17.4.2",
-    "fastify": "^5.12.1",
     "hono": "^4.11.4",
     "jose": "^6.2.10",
     "pg": "^8.23.0",

@@ -23,6 +23,7 @@ import { SettingsRepository } from './settings/repository.js';
 import { WebSessionService } from './web/session.js';
 import type { WebIdentity } from './web/session.js';
 import { adminPage } from './web/admin-page.js';
+import { RateLimiter, securityHeaders } from './security/http.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
@@ -45,6 +46,18 @@ const worker = new BackgroundWorker(database, semantic, baseConfig.worker.pollIn
   baseConfig.worker.staleAfterSeconds, logger);
 if (baseConfig.worker.enabled) worker.start();
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
+const limiter = new RateLimiter();
+
+app.use('*', securityHeaders());
+app.use('/mcp', limiter.middleware('mcp', baseConfig.security.mcpPerMinute, baseConfig.security.trustProxy));
+app.use('/auth/*', limiter.middleware('auth', baseConfig.security.authPerMinute, baseConfig.security.trustProxy));
+app.use('/api/setup/*', limiter.middleware('setup', baseConfig.security.setupPerMinute, baseConfig.security.trustProxy));
+app.use('/api/admin/*', limiter.middleware('web', baseConfig.security.webPerMinute, baseConfig.security.trustProxy));
+
+app.onError((error, context) => {
+  logger.error({ err: error, path: context.req.path }, 'Unhandled HTTP error');
+  return context.json({ error: 'internal_error', error_description: 'Internal server error.' }, 500);
+});
 
 const setupGuard = async (context: Context, next: Next) => {
   const installation = await settings.installation();
@@ -274,8 +287,18 @@ app.get('/api/admin/audit', async context => adminApi(context, false, async iden
 
 app.get('/health', async context => {
   try {
-    await database.query('SELECT 1');
-    return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: '0.2.0', database: 'ok' });
+    const [vector, installation, queue] = await Promise.all([
+      database.query<{ version: string }>("SELECT extversion AS version FROM pg_extension WHERE extname='vector'"),
+      settings.installation(),
+      database.query<{ pending: string; processing: string; failed: string }>(
+        `SELECT count(*) FILTER(WHERE status='pending')::text AS pending,
+         count(*) FILTER(WHERE status='processing')::text AS processing,
+         count(*) FILTER(WHERE status='failed')::text AS failed FROM ingestion_jobs`)
+    ]);
+    return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: '0.2.0',
+      database: 'ok', pgvector: vector.rows[0]?.version ?? 'missing', installed: installation.completed,
+      worker: { enabled: baseConfig.worker.enabled, pending: Number(queue.rows[0].pending),
+        processing: Number(queue.rows[0].processing), failed: Number(queue.rows[0].failed) } });
   } catch {
     return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: '0.2.0', database: 'unavailable' }, 503);
   }
