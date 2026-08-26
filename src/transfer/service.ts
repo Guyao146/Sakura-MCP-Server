@@ -88,7 +88,11 @@ function parseJson(content: string): unknown[] {
 function normalizeExportRecord(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
   const item = value as Record<string, unknown>;
-  return { ...item, validFrom: item.valid_from, validUntil: item.valid_until, expiresAt: item.expires_at };
+  return { ...item,
+    validFrom: typeof item.valid_from === 'string' ? item.valid_from : undefined,
+    validUntil: typeof item.valid_until === 'string' ? item.valid_until : undefined,
+    expiresAt: typeof item.expires_at === 'string' ? item.expires_at : undefined
+  };
 }
 
 function parseMarkdown(content: string): unknown[] {
