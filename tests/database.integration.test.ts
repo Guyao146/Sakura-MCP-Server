@@ -132,7 +132,7 @@ describeDatabase('PostgreSQL installation integration', () => {
       providerType: 'ollama', chatModel: 'chat-test', embeddingModel: 'embed-test', autoExtractEnabled: false,
       autoMergeEnabled: false, conflictDetectionEnabled: true, privacyMode: true
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ embeddings: [[1, 0, 0]] }), {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify({ embeddings: [[1, 0, 0]] }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     })));
     const stored = await semantic.remember(identity.userId, {
