@@ -17,12 +17,8 @@ services:
       retries: 10
 
   sakura-mcp:
-    build:
-      # Defaults to the local repository. Remote deployments can set this to
-      # https://github.com/Guyao146/Sakura-MCP-Server.git#main in .env.
-      context: ${SAKURA_MCP_BUILD_CONTEXT:-.}
-    image: sakura-mcp-server:latest
-    pull_policy: build
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.1}
+    pull_policy: always
     restart: unless-stopped
     env_file: .env
     depends_on:

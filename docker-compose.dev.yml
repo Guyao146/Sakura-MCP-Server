@@ -1,0 +1,6 @@
+services:
+  sakura-mcp:
+    build:
+      context: .
+    image: sakura-mcp-server:local
+    pull_policy: build

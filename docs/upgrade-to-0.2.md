@@ -1,6 +1,6 @@
-# Upgrade to Sakura-MCP-Server 0.2
+# Upgrade to Sakura-MCP-Server 0.2.x
 
-Version 0.2 changes Sakura-MCP-Server into a PostgreSQL-backed multi-user AI memory platform.
+Version 0.2.x changes Sakura-MCP-Server into a PostgreSQL-backed multi-user AI memory platform.
 
 ## Before upgrading
 
@@ -17,11 +17,13 @@ git pull --ff-only
 cp .env.example .env.new
 # Merge required values into the existing .env; do not overwrite secrets blindly.
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 docker compose logs -f sakura-mcp
 ```
 
 新部署也可以直接运行仓库中的 `scripts/install.sh`。脚本只适用于没有 `.env` 的首次部署，发现已有 `.env` 会停止，不会覆盖现有密钥。
+
+生产 `docker-compose.yml` 默认拉取 `ghcr.io/guyao146/sakura-mcp-server:0.2.1`，不需要服务器保存源码或安装 Node.js。源码开发/本地构建请额外使用 `docker-compose.dev.yml`。
 
 With `AUTO_MIGRATE=true`, migrations run in filename order at startup. Do not delete entries from `schema_migrations`.
 

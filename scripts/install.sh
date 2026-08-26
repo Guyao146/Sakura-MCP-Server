@@ -19,12 +19,22 @@ command -v openssl >/dev/null || { echo "缺少 openssl，请先安装：sudo ap
 command -v docker >/dev/null || { echo "缺少 Docker，请先安装 Docker。" >&2; exit 1; }
 docker compose version >/dev/null || { echo "缺少 Docker Compose v2。" >&2; exit 1; }
 
-public_url="${1:-}"
+public_url=""
+local_build=false
+for argument in "$@"; do
+  if [[ "$argument" == "--local-build" ]]; then
+    local_build=true
+  elif [[ -z "$public_url" ]]; then
+    public_url="$argument"
+  else
+    echo "未知参数：$argument（支持：HTTPS 地址、--local-build）" >&2
+    exit 1
+  fi
+done
 if [[ -z "$public_url" ]]; then
   read -r -p "请输入 MCP 公网 HTTPS 地址（例如 https://mcp.example.com）：" public_url
 fi
 
-build_context="${SAKURA_MCP_BUILD_CONTEXT:-.}"
 if [[ ! "$public_url" =~ ^https://[^/]+$ ]]; then
   echo "公网地址必须是类似 https://mcp.example.com 的 HTTPS 地址。" >&2
   exit 1
@@ -39,7 +49,6 @@ bootstrap_secret="$(generate_secret)"
 cp .env.example .env
 sed -i \
   -e "s#^PUBLIC_BASE_URL=.*#PUBLIC_BASE_URL=$public_url#" \
-  -e "s#^SAKURA_MCP_BUILD_CONTEXT=.*#SAKURA_MCP_BUILD_CONTEXT=$build_context#" \
   -e "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$database_password#" \
   -e "s#^DATABASE_URL=.*#DATABASE_URL=postgresql://sakura:$database_password@postgres:5432/sakura_memory#" \
   -e "s#^SETUP_TOKEN=.*#SETUP_TOKEN=$setup_token#" \
@@ -51,8 +60,13 @@ chmod 600 .env
 mkdir -p data
 chmod 700 data
 
-echo "正在构建并启动 PostgreSQL + Sakura-MCP-Server……"
-docker compose up -d --build
+echo "正在拉取并启动 PostgreSQL + Sakura-MCP-Server……"
+if [[ "$local_build" == true ]]; then
+  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+else
+  docker compose pull sakura-mcp postgres
+  docker compose up -d
+fi
 
 echo
 echo "部署已启动。"

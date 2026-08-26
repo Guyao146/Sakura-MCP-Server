@@ -286,7 +286,7 @@ chmod +x scripts/install.sh
 2. 拒绝覆盖已有 `.env`；
 3. 生成随机数据库密码、`SETUP_TOKEN`、`CONFIG_ENCRYPTION_KEY` 和 bootstrap API Key；
 4. 创建权限为 `600` 的 `.env` 和 `700` 的 `data/`；
-5. 执行 `docker compose up -d --build`；
+5. 拉取 GHCR 镜像并执行 `docker compose up -d`；
 6. 输出安装向导和健康检查地址。
 
 脚本不会输出任何生成的 Secret。执行后请先配置 HTTPS Nginx，再访问 `/setup`。
@@ -300,12 +300,27 @@ cd Sakura-MCP-Server
 cp .env.example .env
 # 修改数据库密码、PUBLIC_BASE_URL，并生成 SETUP_TOKEN 和 CONFIG_ENCRYPTION_KEY
 chmod 600 .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-### 只拉取 Compose 的远程编排
+`docker-compose.yml` 是生产编排文件，默认直接拉取：
 
-如果服务器不想克隆完整仓库，可以只下载 Compose 和环境模板，再让 Docker BuildKit 从 GitHub Git context 构建：
+```text
+ghcr.io/guyao146/sakura-mcp-server:0.2.1
+```
+
+如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
+
+本地开发需要构建源码时使用：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+### 只下载 Compose 的远程编排
+
+如果服务器不想克隆完整仓库，可以只下载生产 Compose 和环境模板，直接拉取 GHCR 镜像：
 
 ```bash
 mkdir -p /opt/sakura-mcp-server
@@ -314,18 +329,18 @@ curl -fsSLO https://raw.githubusercontent.com/Guyao146/Sakura-MCP-Server/main/do
 curl -fsSLO https://raw.githubusercontent.com/Guyao146/Sakura-MCP-Server/main/.env.example
 cp .env.example .env
 # 填写密钥和 PUBLIC_BASE_URL
-printf '\nSAKURA_MCP_BUILD_CONTEXT=https://github.com/Guyao146/Sakura-MCP-Server.git#main\n' >> .env
 mkdir -p data && chmod 700 data && chmod 600 .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-`build.context` 默认是当前目录 `.`；设置 `SAKURA_MCP_BUILD_CONTEXT` 后，Docker BuildKit 会从远程 Git 仓库拉取 Dockerfile、`src/` 和 `migrations/`。生产环境不要长期使用 `#main`，应固定 tag 或已验证 commit：
+生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_BUILD_CONTEXT=https://github.com/Guyao146/Sakura-MCP-Server.git#858f658
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.1
 ```
 
-远程 Compose、`.env.example` 和 Git context 必须来自同一个版本。只下载 Compose 文件而不设置远程 context，会因为缺少本地 Dockerfile 和构建文件而失败。
+如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
 
 Compose 默认：
 
@@ -334,7 +349,8 @@ Compose 默认：
 - `host.docker.internal` 映射到 Docker 宿主机，便于访问宿主机 Ollama；
 - PostgreSQL 数据保存在命名卷 `sakura-mcp-server_postgres-data`；
 - 审计 JSONL 保存在当前目录 `data/`；
-- 应用使用只读文件系统、非 root 用户、丢弃全部 Linux capabilities 和 PID 限制。
+- 应用使用只读文件系统、非 root 用户、丢弃全部 Linux capabilities 和 PID 限制；
+- 生产 Compose 只拉取 GHCR 镜像，源码构建仅由 `docker-compose.dev.yml` 覆盖启用。
 
 生成安装密钥：
 
@@ -473,7 +489,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前直接在 `main` 持续开发通用记忆平台 `v0.2.0`。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.1`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 

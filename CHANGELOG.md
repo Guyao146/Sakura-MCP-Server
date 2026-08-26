@@ -2,6 +2,20 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.1] - 2026-08-26
+
+### Added
+
+- Public GHCR multi-platform container publishing workflow for `linux/amd64` and `linux/arm64`.
+- Production Compose deployment from a versioned remote image.
+- Separate `docker-compose.dev.yml` for local source builds.
+- Linux installer support for remote-image mode and explicit `--local-build` mode.
+
+### Changed
+
+- The production image uses the `0.2.1` GHCR tag by default.
+- The production runtime uses the Debian slim Node image and a non-root Debian user.
+
 ## [0.2.0] - 2026-08-26
 
 ### Added
