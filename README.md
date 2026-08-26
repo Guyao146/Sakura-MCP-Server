@@ -88,6 +88,10 @@ memory_update               更新并保留版本
 memory_forget               软删除或管理员永久删除
 memory_extract              从文本提取候选长期记忆（不保存）
 memory_extract_and_remember 从文本提取并保存长期记忆
+memory_conflicts            查询待处理/已解决/已忽略冲突
+memory_resolve_conflict     保留、合并或忽略冲突记忆
+memory_link                 建立同空间记忆关系
+memory_feedback             记录召回是否有用及纠正意见
 space_list                  列出个人与共享空间
 space_create                创建共享空间
 space_list_members          查看成员与角色
@@ -167,6 +171,27 @@ OLLAMA_EMBEDDING_MODEL=
 - 隐私模式。
 
 隐私模式只允许本地 Ollama，拒绝把内容发送至 OpenAI-compatible Provider。不同空间可以使用不同维度的向量，因此当前使用精确 pgvector 检索；后续将按 Provider/模型/维度分区建立 HNSW 索引。
+
+## 记忆治理
+
+自动提取后的新记忆可按空间策略执行治理：
+
+- 规范化内容完全相同：建立 `duplicate_of` 关系；
+- 同维度向量相似度达到阈值：创建潜在冲突，等待人工确认；
+- 不会仅凭模型或相似度自动删除旧事实；
+- 开放状态下同一对记忆只允许一个冲突记录；
+- 关系只能建立在同一空间，禁止自关联。
+
+冲突支持四种处理：
+
+```text
+keep_a   保留 A，B 标记为 superseded
+keep_b   保留 B，A 标记为 superseded
+merge    将人工确认后的合并内容写入 A，B 标记为 superseded
+dismiss  认为不存在冲突，保留两条记忆
+```
+
+所有替代和合并操作保留原记忆、来源、关系及版本历史，不进行物理删除。Web 管理后台提供“冲突确认”页面；冲突解决要求人工 Authentik 用户，Agent 不能自行裁决事实。`memory_feedback` 可记录某条召回是否有帮助及纠正内容，为后续排序优化提供依据。
 
 ## Docker 部署
 
@@ -322,11 +347,12 @@ npm.cmd start
 - OpenAI-compatible/Ollama Provider 管理与空间级 AI 策略；
 - 记忆 Embedding、pgvector 混合检索和故障安全回退；
 - LLM 候选记忆提取与批量保存；
+- 重复检测、关系、反馈、冲突队列与人工解决；
 
 进行中：
 
 - Provider/空间策略、冲突确认和审计管理页面；
-- 异步任务队列、自动合并与冲突确认；
+- 异步任务队列和自动合并策略增强；
 - 导入导出、MCP Resources、审计后台和跨租户安全测试。
 
 未完成的功能不会以伪造数据或静默降级方式对外宣称可用。

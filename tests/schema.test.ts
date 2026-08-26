@@ -42,4 +42,11 @@ describe('memory database schema', () => {
     expect(sql).toContain('ALTER COLUMN embedding DROP NOT NULL');
     expect(sql).toContain("status IN ('pending', 'failed')");
   });
+
+  it('prevents duplicate open conflicts and self relations', async () => {
+    const sql = await readFile(new URL('../migrations/005_memory_governance.sql', import.meta.url), 'utf8');
+    expect(sql).toContain('memory_relation_not_self');
+    expect(sql).toContain('memory_conflict_not_self');
+    expect(sql).toContain('one_open_conflict_per_pair');
+  });
 });

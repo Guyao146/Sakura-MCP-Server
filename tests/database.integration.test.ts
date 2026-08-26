@@ -9,6 +9,7 @@ import { requireAgentSpaceScope } from '../src/memory/permissions.js';
 import { SpaceRepository } from '../src/spaces/repository.js';
 import { WebSessionService } from '../src/web/session.js';
 import { SemanticMemoryService } from '../src/semantic/service.js';
+import { MemoryGovernanceService } from '../src/governance/service.js';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -26,7 +27,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     const extension = await database.query<{ extversion: string }>("SELECT extversion FROM pg_extension WHERE extname='vector'");
     const migrations = await database.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(extension.rows[0].extversion).toBeTruthy();
-    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql']);
+    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql']);
     await expect(settings.installation()).resolves.toMatchObject({ completed: false });
   });
 
@@ -171,5 +172,36 @@ describeDatabase('PostgreSQL installation integration', () => {
     await expect(repository.get(identity.userId, stored.id)).resolves.toMatchObject({ content: 'This raw memory must survive' });
     const status = await database.query<{ status: string; embedding: string | null }>('SELECT status,embedding::text FROM memory_embeddings WHERE memory_id=$1', [stored.id]);
     expect(status.rows[0]).toMatchObject({ status: 'failed', embedding: null });
+  });
+
+  it('detects duplicates, stores feedback, links memories and resolves conflicts', async () => {
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('governance-owner', { email: 'governance@example.com', displayName: 'Governance Owner' });
+    const first = await repository.remember(identity.userId, {
+      spaceId: identity.personalSpaceId, type: 'fact', content: 'The preferred editor is VS Code', summary: 'Editor preference'
+    });
+    const duplicate = await repository.remember(identity.userId, {
+      spaceId: identity.personalSpaceId, type: 'fact', content: '  the   preferred editor is VS Code  ', summary: 'Same editor preference'
+    });
+    const governance = new MemoryGovernanceService(database);
+    const detection = await governance.detect(identity.userId, duplicate.id);
+    expect(detection.duplicateOf).toBe(first.id);
+    const relation = await database.query<{ relation_type: string }>(
+      'SELECT relation_type FROM memory_relations WHERE from_memory_id=$1 AND to_memory_id=$2', [duplicate.id, first.id]);
+    expect(relation.rows[0].relation_type).toBe('duplicate_of');
+    await expect(governance.feedback(identity.userId, first.id, true, 'Confirmed')).resolves.toMatchObject({ helpful: true });
+    const feedback = await database.query<{ helpful: boolean; correction: string }>('SELECT helpful,correction FROM memory_feedback WHERE memory_id=$1 AND user_id=$2', [first.id, identity.userId]);
+    expect(feedback.rows[0]).toMatchObject({ helpful: true, correction: 'Confirmed' });
+
+    const conflict = await database.query<{ id: string }>(
+      `INSERT INTO memory_conflicts(space_id,memory_a_id,memory_b_id,reason) VALUES($1,$2,$3,'Integration conflict') RETURNING id`,
+      [identity.personalSpaceId, first.id, duplicate.id]);
+    await expect(governance.resolve(identity.userId, conflict.rows[0].id, 'keep_a')).resolves.toMatchObject({ status: 'resolved' });
+    const states = await database.query<{ id: string; status: string; supersedes_id: string | null }>('SELECT id,status,supersedes_id FROM memories WHERE id=ANY($1)', [[first.id, duplicate.id]]);
+    const winner = states.rows.find(row => row.id === first.id)!;
+    const loser = states.rows.find(row => row.id === duplicate.id)!;
+    expect(winner.supersedes_id).toBe(duplicate.id);
+    expect(loser.status).toBe('superseded');
+    await expect(governance.link(identity.userId, first.id, first.id, 'self', 1)).rejects.toThrow('cannot relate to itself');
   });
 });

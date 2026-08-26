@@ -10,6 +10,7 @@ import { MemoryRepository } from './memory/repository.js';
 import { requireAgentSpaceScope } from './memory/permissions.js';
 import { SpaceRepository } from './spaces/repository.js';
 import { SemanticMemoryService } from './semantic/service.js';
+import { MemoryGovernanceService } from './governance/service.js';
 
 const memoryType = z.enum(['fact', 'preference', 'event', 'task', 'person', 'project', 'summary', 'document', 'idea', 'other']);
 const text = (value: unknown) => ({
@@ -22,6 +23,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   const server = new McpServer({ name: 'Sakura-MCP-Server', version: '0.2.0' });
   const repository = new MemoryRepository(database);
   const semantic = new SemanticMemoryService(database, getConfig);
+  const governance = new MemoryGovernanceService(database);
   const agents = new AgentRepository(database);
   const spaces = new SpaceRepository(database);
   const identity = repository.ensureUser(principal.id, { email: principal.email, displayName: principal.displayName });
@@ -127,6 +129,44 @@ export function createServer(database: Database, principal: Principal, audit: Au
     const spaceId = args.space_id ?? personalSpaceId;
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:write');
     return { memories: await semantic.extractAndRemember(userId, spaceId, args.text, principal.id) };
+  }));
+
+  server.registerTool('memory_conflicts', {
+    description: 'List open, resolved or dismissed memory conflicts in an authorized space.',
+    inputSchema: { space_id: z.string().uuid().optional(), status: z.enum(['open','resolved','dismissed']).default('open') }
+  }, guarded('memory_conflicts', ['memory:read'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
+    return { conflicts: await governance.listConflicts(userId, spaceId, args.status) };
+  }));
+
+  server.registerTool('memory_resolve_conflict', {
+    description: 'Resolve a memory conflict by keeping A/B, merging into A, or dismissing it.',
+    inputSchema: { conflict_id: z.string().uuid(), resolution: z.enum(['keep_a','keep_b','merge','dismiss']),
+      merged_content: z.string().min(1).max(1_000_000).optional(), merged_summary: z.string().max(2000).optional(),
+      merged_tags: z.array(z.string().max(80)).max(50).optional() }
+  }, guarded('memory_resolve_conflict', ['memory:update'], async (args, userId) => {
+    if (principal.agentId) throw new Error('Conflict resolution requires an interactive Authentik user.');
+    return governance.resolve(userId, args.conflict_id, args.resolution,
+      args.merged_content ? { content: args.merged_content, summary: args.merged_summary, tags: args.merged_tags } : undefined);
+  }));
+
+  server.registerTool('memory_link', {
+    description: 'Create or update a typed relation between two memories in the same space.',
+    inputSchema: { from_memory_id: z.string().uuid(), to_memory_id: z.string().uuid(), relation_type: z.string().min(1).max(100), confidence: z.number().min(0).max(1).default(1) }
+  }, guarded('memory_link', ['memory:update'], async (args, userId) => {
+    const spaceId = await repository.spaceForMemory(userId, args.from_memory_id);
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:update');
+    return governance.link(userId, args.from_memory_id, args.to_memory_id, args.relation_type, args.confidence);
+  }));
+
+  server.registerTool('memory_feedback', {
+    description: 'Record whether a recalled memory was helpful and optionally submit a correction.',
+    inputSchema: { memory_id: z.string().uuid(), helpful: z.boolean().optional(), correction: z.string().max(10_000).optional() }
+  }, guarded('memory_feedback', ['memory:read'], async (args, userId) => {
+    const spaceId = await repository.spaceForMemory(userId, args.memory_id);
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
+    return governance.feedback(userId, args.memory_id, args.helpful, args.correction);
   }));
 
   server.registerTool('space_list', {

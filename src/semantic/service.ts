@@ -6,6 +6,7 @@ import { MemoryRepository } from '../memory/repository.js';
 import type { MemoryRecord, RememberInput } from '../memory/types.js';
 import { createProvider, type ProviderKind, type ResolvedProvider } from '../providers/factory.js';
 import type { ExtractedMemory } from '../providers/types.js';
+import { MemoryGovernanceService } from '../governance/service.js';
 
 interface SpaceStrategy {
   provider_type: ProviderKind | null;
@@ -108,10 +109,15 @@ export class SemanticMemoryService {
 
   async extractAndRemember(userId: string, spaceId: string, text: string, sourceAgent?: string) {
     const candidates = await this.extract(userId, spaceId, text);
+    const strategy = await this.strategy(userId, spaceId);
+    const governance = new MemoryGovernanceService(this.database);
     const stored = [];
     for (const candidate of candidates.slice(0, 50)) {
-      stored.push(await this.remember(userId, { spaceId, ...candidate,
-        source: { type: 'automatic_extraction', agent: sourceAgent, excerpt: text.slice(0, 10_000) } }));
+      const memory = await this.remember(userId, { spaceId, ...candidate,
+        source: { type: 'automatic_extraction', agent: sourceAgent, excerpt: text.slice(0, 10_000) } });
+      const governanceResult = strategy.auto_merge_enabled || strategy.conflict_detection_enabled
+        ? await governance.detect(userId, memory.id) : undefined;
+      stored.push({ ...memory, governance: governanceResult });
     }
     return stored;
   }

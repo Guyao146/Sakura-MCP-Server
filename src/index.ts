@@ -12,6 +12,7 @@ import { Database } from './database.js';
 import { MemoryRepository } from './memory/repository.js';
 import { SpaceRepository } from './spaces/repository.js';
 import { SemanticMemoryService } from './semantic/service.js';
+import { MemoryGovernanceService } from './governance/service.js';
 import { createServer } from './tools.js';
 import { setupPage } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
@@ -34,6 +35,7 @@ const memories = new MemoryRepository(database);
 const spaces = new SpaceRepository(database);
 const agents = new AgentRepository(database);
 const semantic = new SemanticMemoryService(database, () => config);
+const governance = new MemoryGovernanceService(database);
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
 const setupGuard = async (context: Context, next: Next) => {
@@ -165,6 +167,16 @@ app.delete('/api/admin/memories/:id', async context => adminApi(context, true, a
   const id = z.string().uuid().parse(context.req.param('id'));
   await memories.forget(identity.userId, id, false);
   return { deleted: true };
+}));
+app.get('/api/admin/conflicts', async context => adminApi(context, false, async identity => {
+  const query = z.object({ space_id: z.string().uuid(), status: z.enum(['open','resolved','dismissed']).default('open') }).parse(context.req.query());
+  return { conflicts: await governance.listConflicts(identity.userId, query.space_id, query.status) };
+}));
+app.post('/api/admin/conflicts/:id/resolve', async context => adminApi(context, true, async identity => {
+  const body = z.object({ resolution: z.enum(['keep_a','keep_b','merge','dismiss']), content: z.string().min(1).max(1_000_000).optional(),
+    summary: z.string().max(2000).optional(), tags: z.array(z.string().max(80)).max(50).optional() }).parse(await context.req.json());
+  return governance.resolve(identity.userId, z.string().uuid().parse(context.req.param('id')), body.resolution,
+    body.content ? { content: body.content, summary: body.summary, tags: body.tags } : undefined);
 }));
 app.get('/api/admin/agents', async context => adminApi(context, false, identity => agents.list(identity.userId)));
 app.post('/api/admin/agents', async context => adminApi(context, true, async identity => {

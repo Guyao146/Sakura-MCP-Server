@@ -30,7 +30,7 @@ describe('Web management security', () => {
   });
 
   it('includes management views for spaces, memories, Agents and members', () => {
-    for (const marker of ['记忆空间', '记忆管理', 'Agent 密钥', '模型 Provider', 'AI 策略', 'inviteMember', 'grantAgent', 'saveStrategy', 'saveProvider']) {
+    for (const marker of ['记忆空间', '记忆管理', '冲突确认', 'Agent 密钥', '模型 Provider', 'AI 策略', 'inviteMember', 'grantAgent', 'saveStrategy', 'saveProvider', 'resolveConflict']) {
       expect(adminPage).toContain(marker);
     }
   });
