@@ -303,6 +303,30 @@ chmod 600 .env
 docker compose up -d --build
 ```
 
+### 只拉取 Compose 的远程编排
+
+如果服务器不想克隆完整仓库，可以只下载 Compose 和环境模板，再让 Docker BuildKit 从 GitHub Git context 构建：
+
+```bash
+mkdir -p /opt/sakura-mcp-server
+cd /opt/sakura-mcp-server
+curl -fsSLO https://raw.githubusercontent.com/Guyao146/Sakura-MCP-Server/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/Guyao146/Sakura-MCP-Server/main/.env.example
+cp .env.example .env
+# 填写密钥和 PUBLIC_BASE_URL
+printf '\nSAKURA_MCP_BUILD_CONTEXT=https://github.com/Guyao146/Sakura-MCP-Server.git#main\n' >> .env
+mkdir -p data && chmod 700 data && chmod 600 .env
+docker compose up -d --build
+```
+
+`build.context` 默认是当前目录 `.`；设置 `SAKURA_MCP_BUILD_CONTEXT` 后，Docker BuildKit 会从远程 Git 仓库拉取 Dockerfile、`src/` 和 `migrations/`。生产环境不要长期使用 `#main`，应固定 tag 或已验证 commit：
+
+```dotenv
+SAKURA_MCP_BUILD_CONTEXT=https://github.com/Guyao146/Sakura-MCP-Server.git#858f658
+```
+
+远程 Compose、`.env.example` 和 Git context 必须来自同一个版本。只下载 Compose 文件而不设置远程 context，会因为缺少本地 Dockerfile 和构建文件而失败。
+
 Compose 默认：
 
 - 应用绑定 `127.0.0.1:3000`；
