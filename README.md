@@ -92,6 +92,9 @@ memory_conflicts            查询待处理/已解决/已忽略冲突
 memory_resolve_conflict     保留、合并或忽略冲突记忆
 memory_link                 建立同空间记忆关系
 memory_feedback             记录召回是否有用及纠正意见
+memory_import               导入 JSON/Markdown 并返回任务摘要
+memory_import_status        查询导入任务与逐条错误
+memory_export               导出可迁移 JSON/Markdown
 space_list                  列出个人与共享空间
 space_create                创建共享空间
 space_list_members          查看成员与角色
@@ -104,7 +107,7 @@ agent_grant_space           配置空间级权限
 agent_revoke_space          移除空间级权限
 ```
 
-后续工具：`memory_link`、`memory_ingest`、`memory_conflicts`、`memory_feedback` 和 `memory_export`。
+后续工具将聚焦异步重建、审计查询和大型文档分块。
 
 ## 记忆数据模型
 
@@ -192,6 +195,20 @@ dismiss  认为不存在冲突，保留两条记忆
 ```
 
 所有替代和合并操作保留原记忆、来源、关系及版本历史，不进行物理删除。Web 管理后台提供“冲突确认”页面；冲突解决要求人工 Authentik 用户，Agent 不能自行裁决事实。`memory_feedback` 可记录某条召回是否有帮助及纠正内容，为后续排序优化提供依据。
+
+## 导入、导出与 MCP Resources
+
+支持 JSON 和 Markdown。单次导入最多 500 条、正文最多 5 MB；每条独立校验，一条失败不会回滚其他有效记忆。导入复用空间权限、Embedding 和治理，`ingestion_jobs` 保存总数、成功、失败及最多 100 条错误摘要。导出不包含 Provider API Key、OIDC Token、Session 或 Agent Secret。
+
+支持资源浏览的 MCP 客户端可以读取：
+
+```text
+memory://spaces                    当前身份可访问的空间
+memory://spaces/{spaceId}          空间和最近 100 条有效记忆
+memory://memories/{memoryId}       单条结构化记忆
+```
+
+Resource URI 不是权限凭据；每次读取仍校验 Bearer 身份、Agent grant、空间成员关系和 `memory:read` scope。Web 管理台“记忆管理”页面提供导入、导出 JSON 和导出 Markdown。当前同步完成并记录任务，后续大文件会沿用同一任务协议迁移到 Worker。
 
 ## Docker 部署
 
@@ -348,12 +365,12 @@ npm.cmd start
 - 记忆 Embedding、pgvector 混合检索和故障安全回退；
 - LLM 候选记忆提取与批量保存；
 - 重复检测、关系、反馈、冲突队列与人工解决；
+- JSON/Markdown 导入导出、任务错误报告与 MCP Resources；
 
 进行中：
 
-- Provider/空间策略、冲突确认和审计管理页面；
 - 异步任务队列和自动合并策略增强；
-- 导入导出、MCP Resources、审计后台和跨租户安全测试。
+- 审计后台和跨租户安全测试。
 
 未完成的功能不会以伪造数据或静默降级方式对外宣称可用。
 

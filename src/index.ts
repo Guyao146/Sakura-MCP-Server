@@ -13,6 +13,7 @@ import { MemoryRepository } from './memory/repository.js';
 import { SpaceRepository } from './spaces/repository.js';
 import { SemanticMemoryService } from './semantic/service.js';
 import { MemoryGovernanceService } from './governance/service.js';
+import { MemoryTransferService } from './transfer/service.js';
 import { createServer } from './tools.js';
 import { setupPage } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
@@ -36,6 +37,7 @@ const spaces = new SpaceRepository(database);
 const agents = new AgentRepository(database);
 const semantic = new SemanticMemoryService(database, () => config);
 const governance = new MemoryGovernanceService(database);
+const transfer = new MemoryTransferService(database, semantic, governance);
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
 const setupGuard = async (context: Context, next: Next) => {
@@ -178,6 +180,24 @@ app.post('/api/admin/conflicts/:id/resolve', async context => adminApi(context, 
   return governance.resolve(identity.userId, z.string().uuid().parse(context.req.param('id')), body.resolution,
     body.content ? { content: body.content, summary: body.summary, tags: body.tags } : undefined);
 }));
+app.post('/api/admin/imports', async context => adminApi(context, true, async identity => {
+  const body = z.object({ space_id: z.string().uuid(), format: z.enum(['json','markdown']), content: z.string().min(1).max(5_000_000) }).parse(await context.req.json());
+  return transfer.import(identity.userId, body.space_id, body.format, body.content, identity.subject);
+}));
+app.get('/api/admin/imports/:id', async context => adminApi(context, false, identity =>
+  transfer.status(identity.userId, z.string().uuid().parse(context.req.param('id')))));
+app.get('/api/admin/exports', async context => {
+  try {
+    const identity = await adminIdentity(context);
+    const query = z.object({ space_id: z.string().uuid(), format: z.enum(['json','markdown']).default('json') }).parse(context.req.query());
+    const exported = await transfer.export(identity.userId, query.space_id, query.format);
+    context.header('Content-Type', `${exported.mimeType}; charset=utf-8`);
+    context.header('Content-Disposition', `attachment; filename="${exported.filename}"`);
+    return context.body(exported.content);
+  } catch (error) {
+    return context.json({ error: 'export_failed', error_description: error instanceof Error ? error.message : 'Export failed.' }, 400);
+  }
+});
 app.get('/api/admin/agents', async context => adminApi(context, false, identity => agents.list(identity.userId)));
 app.post('/api/admin/agents', async context => adminApi(context, true, async identity => {
   const body = z.object({ name: z.string().min(1).max(120), scopes: agentScopeSchema, expires_at: z.iso.datetime().optional() }).parse(await context.req.json());

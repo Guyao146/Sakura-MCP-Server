@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import type { Principal } from './auth.js';
 import { requireScopes } from './auth.js';
@@ -11,6 +11,7 @@ import { requireAgentSpaceScope } from './memory/permissions.js';
 import { SpaceRepository } from './spaces/repository.js';
 import { SemanticMemoryService } from './semantic/service.js';
 import { MemoryGovernanceService } from './governance/service.js';
+import { MemoryTransferService } from './transfer/service.js';
 
 const memoryType = z.enum(['fact', 'preference', 'event', 'task', 'person', 'project', 'summary', 'document', 'idea', 'other']);
 const text = (value: unknown) => ({
@@ -24,6 +25,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   const repository = new MemoryRepository(database);
   const semantic = new SemanticMemoryService(database, getConfig);
   const governance = new MemoryGovernanceService(database);
+  const transfer = new MemoryTransferService(database, semantic, governance);
   const agents = new AgentRepository(database);
   const spaces = new SpaceRepository(database);
   const identity = repository.ensureUser(principal.id, { email: principal.email, displayName: principal.displayName });
@@ -169,6 +171,28 @@ export function createServer(database: Database, principal: Principal, audit: Au
     return governance.feedback(userId, args.memory_id, args.helpful, args.correction);
   }));
 
+  server.registerTool('memory_import', {
+    description: 'Import up to 500 memories from JSON or Markdown. Returns a tracked ingestion job summary.',
+    inputSchema: { space_id: z.string().uuid().optional(), format: z.enum(['json','markdown']), content: z.string().min(1).max(5_000_000) }
+  }, guarded('memory_import', ['memory:write'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:write');
+    return transfer.import(userId, spaceId, args.format, args.content, principal.id);
+  }));
+
+  server.registerTool('memory_import_status', {
+    description: 'Read a memory import job and per-record error summary.', inputSchema: { job_id: z.string().uuid() }
+  }, guarded('memory_import_status', ['memory:read'], async (args, userId) => transfer.status(userId, args.job_id)));
+
+  server.registerTool('memory_export', {
+    description: 'Export an authorized memory space as portable JSON or Markdown.',
+    inputSchema: { space_id: z.string().uuid().optional(), format: z.enum(['json','markdown']).default('json') }
+  }, guarded('memory_export', ['memory:export'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:export');
+    return transfer.export(userId, spaceId, args.format);
+  }));
+
   server.registerTool('space_list', {
     description: 'List personal and shared memory spaces visible to the current user.', inputSchema: {}
   }, guarded('space_list', ['memory:read'], (_args, userId) => spaces.list(userId, principal.agentId)));
@@ -229,5 +253,45 @@ export function createServer(database: Database, principal: Principal, audit: Au
     description: 'Remove all access an owned Agent has to a memory space.',
     inputSchema: { agent_id: z.string().uuid(), space_id: z.string().uuid() }
   }, guarded('agent_revoke_space', ['agent:manage'], async (args, userId) => { requireHuman(); await agents.revokeGrant(userId, args.agent_id, args.space_id); return { revoked: true }; }));
+
+  server.registerResource('memory-spaces', 'memory://spaces', {
+    title: 'Accessible memory spaces', description: 'Personal and shared spaces visible to this user or Agent.', mimeType: 'application/json'
+  }, async uri => {
+    requireScopes(principal, ['memory:read']);
+    const { userId } = await identity;
+    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(await spaces.list(userId, principal.agentId), null, 2) }] };
+  });
+
+  server.registerResource('memory-space', new ResourceTemplate('memory://spaces/{spaceId}', {
+    list: async () => {
+      requireScopes(principal, ['memory:read']);
+      const { userId } = await identity;
+      return { resources: (await spaces.list(userId, principal.agentId)).map(space => ({
+        uri: `memory://spaces/${space.id}`, name: space.name as string, title: space.name as string,
+        description: space.description as string, mimeType: 'application/json'
+      })) };
+    }
+  }), { title: 'Memory space', description: 'Space metadata and recent active memories.', mimeType: 'application/json' },
+  async (uri, variables) => {
+    requireScopes(principal, ['memory:read']);
+    const spaceId = z.string().uuid().parse(variables.spaceId);
+    const { userId } = await identity;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
+    const visible = (await spaces.list(userId, principal.agentId)).find(space => space.id === spaceId);
+    if (!visible) throw new Error('Memory space not found or access denied.');
+    const recent = await repository.search(userId, spaceId, '', 100);
+    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify({ space: visible, memories: recent }, null, 2) }] };
+  });
+
+  server.registerResource('memory-record', new ResourceTemplate('memory://memories/{memoryId}', { list: undefined }), {
+    title: 'Memory record', description: 'A single authorized memory with its structured metadata.', mimeType: 'application/json'
+  }, async (uri, variables) => {
+    requireScopes(principal, ['memory:read']);
+    const memoryId = z.string().uuid().parse(variables.memoryId);
+    const { userId } = await identity;
+    const spaceId = await repository.spaceForMemory(userId, memoryId);
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
+    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(await repository.get(userId, memoryId), null, 2) }] };
+  });
   return server;
 }

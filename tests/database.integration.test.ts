@@ -10,6 +10,7 @@ import { SpaceRepository } from '../src/spaces/repository.js';
 import { WebSessionService } from '../src/web/session.js';
 import { SemanticMemoryService } from '../src/semantic/service.js';
 import { MemoryGovernanceService } from '../src/governance/service.js';
+import { MemoryTransferService } from '../src/transfer/service.js';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -203,5 +204,36 @@ describeDatabase('PostgreSQL installation integration', () => {
     expect(winner.supersedes_id).toBe(duplicate.id);
     expect(loser.status).toBe('superseded');
     await expect(governance.link(identity.userId, first.id, first.id, 'self', 1)).rejects.toThrow('cannot relate to itself');
+  });
+
+  it('round-trips portable JSON and Markdown with tracked partial failures', async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'i'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
+    });
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('transfer-owner', { email: 'transfer@example.com', displayName: 'Transfer Owner' });
+    const spaces = new SpaceRepository(database);
+    const source = await spaces.create(identity.userId, 'Transfer Source', 'portable source');
+    const jsonTarget = await spaces.create(identity.userId, 'JSON Target', 'portable target');
+    const markdownTarget = await spaces.create(identity.userId, 'Markdown Target', 'portable target');
+    await repository.remember(identity.userId, { spaceId: source.id, type: 'fact', content: 'Portable fact one', summary: 'First portable memory', tags: ['portable'] });
+    await repository.remember(identity.userId, { spaceId: source.id, type: 'preference', content: 'Portable preference two', summary: 'Second portable memory' });
+    const semantic = new SemanticMemoryService(database, () => config);
+    const transfer = new MemoryTransferService(database, semantic, new MemoryGovernanceService(database));
+    const json = await transfer.export(identity.userId, source.id, 'json');
+    expect(json.content).toContain('sakura-memory-export/v1');
+    expect(json.content).not.toContain('provider-secret');
+    const jsonImport = await transfer.import(identity.userId, jsonTarget.id, 'json', json.content, 'integration-test');
+    expect(jsonImport).toMatchObject({ status: 'completed', completed: 2, failed: 0 });
+    const markdown = await transfer.export(identity.userId, source.id, 'markdown');
+    expect(markdown.content).toContain('## First portable memory');
+    const markdownImport = await transfer.import(identity.userId, markdownTarget.id, 'markdown', markdown.content);
+    expect(markdownImport.completed).toBe(2);
+    const partial = await transfer.import(identity.userId, jsonTarget.id, 'json', JSON.stringify([
+      { type: 'fact', content: 'Valid partial import' }, { type: 'invalid', content: '' }
+    ]));
+    expect(partial).toMatchObject({ status: 'completed', completed: 1, failed: 1 });
+    await expect(transfer.status(identity.userId, partial.jobId)).resolves.toMatchObject({ status: 'completed' });
   });
 });

@@ -49,4 +49,12 @@ describe('memory database schema', () => {
     expect(sql).toContain('memory_conflict_not_self');
     expect(sql).toContain('one_open_conflict_per_pair');
   });
+
+  it('exposes portable MCP memory resources without file URIs', async () => {
+    const source = await readFile(new URL('../src/tools.ts', import.meta.url), 'utf8');
+    expect(source).toContain("'memory://spaces'");
+    expect(source).toContain("'memory://spaces/{spaceId}'");
+    expect(source).toContain("'memory://memories/{memoryId}'");
+    expect(source).not.toContain("'file://");
+  });
 });
