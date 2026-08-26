@@ -35,15 +35,17 @@ export function createServer(database: Database, principal: Principal, audit: Au
     if (principal.source !== 'authentik') throw new Error('This operation requires an interactive Authentik user.');
   };
   const guarded = <T>(name: string, scopes: Scope[], handler: (args: T, userId: string, personalSpaceId: string) => Promise<unknown>) => async (args: T) => {
+    let actorUserId: string | undefined;
     try {
       requireScopes(principal, scopes);
       const { userId, personalSpaceId } = await identity;
+      actorUserId = userId;
       const result = await handler(args, userId, personalSpaceId);
-      await audit.write(principal, name, 'success');
+      await audit.write(principal, `mcp.${name}`, 'success', { arguments: args as unknown }, userId);
       return text(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error.';
-      await audit.write(principal, name, 'error', { message });
+      await audit.write(principal, `mcp.${name}`, 'error', { arguments: args as unknown, message }, actorUserId);
       return failure(message);
     }
   };
@@ -224,6 +226,19 @@ export function createServer(database: Database, principal: Principal, audit: Au
   server.registerTool('background_job_retry', {
     description: 'Retry a failed or cancelled background job from the beginning.', inputSchema: { job_id: z.string().uuid() }
   }, guarded('background_job_retry', ['space:manage'], async (args, userId) => jobs.retry(userId, args.job_id)));
+
+  server.registerTool('audit_list', {
+    description: 'List audit events visible to the current user, space administrator, or system administrator.',
+    inputSchema: { space_id: z.string().uuid().optional(), action: z.string().max(200).optional(),
+      result: z.enum(['success','error']).optional(), limit: z.number().int().min(1).max(200).default(100),
+      cursor: z.number().int().positive().optional() }
+  }, guarded('audit_list', ['memory:read'], async (args, userId) => {
+    if (args.space_id) await requireAgentSpaceScope(database, principal.agentId, args.space_id, 'memory:read');
+    const systemAdmin = principal.source === 'authentik'
+      && Boolean((await database.query<{ is_system_admin: boolean }>('SELECT is_system_admin FROM users WHERE id=$1', [userId])).rows[0]?.is_system_admin);
+    return audit.list(userId, { spaceId: args.space_id, action: args.action, result: args.result,
+      limit: args.limit, cursor: args.cursor, systemAdmin });
+  }));
 
   server.registerTool('space_list', {
     description: 'List personal and shared memory spaces visible to the current user.', inputSchema: {}

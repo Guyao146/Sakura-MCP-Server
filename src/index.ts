@@ -26,9 +26,9 @@ import { adminPage } from './web/admin-page.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
-const audit = new AuditLogger(baseConfig.auditLogPath);
 const database = new Database(baseConfig.database.connectionString, baseConfig.database.maxConnections);
 if (baseConfig.database.autoMigrate) await database.migrate();
+const audit = new AuditLogger(baseConfig.auditLogPath, database);
 const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
 let config = await settings.apply(baseConfig);
 let auth = new AuthService(config, database);
@@ -75,8 +75,12 @@ app.post('/api/setup/complete', async context => {
     await setup.complete(body);
     config = await settings.apply(baseConfig);
     auth = new AuthService(config, database);
+    await audit.record({ action: 'system.install', authSource: 'setup_token', result: 'success', metadata: { administratorEmail: body.administratorEmail } });
     return context.json({ completed: true });
-  } catch (error) { return context.json({ error: 'setup_failed', error_description: error instanceof Error ? error.message : 'Setup failed.' }, 400); }
+  } catch (error) {
+    await audit.record({ action: 'system.install', authSource: 'setup_token', result: 'error', metadata: { message: error instanceof Error ? error.message : 'Setup failed.' } });
+    return context.json({ error: 'setup_failed', error_description: error instanceof Error ? error.message : 'Setup failed.' }, 400);
+  }
 });
 
 app.get('/auth/login', async context => {
@@ -90,8 +94,13 @@ app.get('/auth/callback', async context => {
   try {
     const result = await webSessions.callback(code, state);
     context.header('Set-Cookie', webSessions.cookie(result.token));
+    const identity = await webSessions.authenticate(result.token);
+    await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action: 'auth.login', result: 'success' });
     return context.redirect(result.returnTo);
-  } catch (error) { return context.json({ error: 'callback_failed', error_description: error instanceof Error ? error.message : 'OIDC callback failed.' }, 401); }
+  } catch (error) {
+    await audit.record({ authSource: 'authentik', action: 'auth.login', result: 'error', metadata: { message: error instanceof Error ? error.message : 'OIDC callback failed.' } });
+    return context.json({ error: 'callback_failed', error_description: error instanceof Error ? error.message : 'OIDC callback failed.' }, 401);
+  }
 });
 app.post('/auth/logout', async context => {
   try {
@@ -101,6 +110,7 @@ app.post('/auth/logout', async context => {
       return context.json({ error: 'csrf_failed', error_description: 'CSRF token is missing or invalid.' }, 403);
     }
     await webSessions.logout(token);
+    await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action: 'auth.logout', result: 'success' });
     context.header('Set-Cookie', webSessions.clearCookie());
     return context.json({ loggedOut: true });
   } catch (error) {
@@ -193,14 +203,19 @@ app.post('/api/admin/imports', async context => adminApi(context, true, async id
 app.get('/api/admin/imports/:id', async context => adminApi(context, false, identity =>
   transfer.status(identity.userId, z.string().uuid().parse(context.req.param('id')))));
 app.get('/api/admin/exports', async context => {
+  let identity: WebIdentity | undefined;
   try {
-    const identity = await adminIdentity(context);
+    identity = await adminIdentity(context);
     const query = z.object({ space_id: z.string().uuid(), format: z.enum(['json','markdown']).default('json') }).parse(context.req.query());
     const exported = await transfer.export(identity.userId, query.space_id, query.format);
+    await audit.record({ actorUserId: identity.userId, spaceId: query.space_id, authSource: 'authentik',
+      action: 'web.GET./api/admin/exports', targetType: 'space_export', targetId: query.space_id, result: 'success', metadata: { format: query.format } });
     context.header('Content-Type', `${exported.mimeType}; charset=utf-8`);
     context.header('Content-Disposition', `attachment; filename="${exported.filename}"`);
     return context.body(exported.content);
   } catch (error) {
+    await audit.record({ actorUserId: identity?.userId, authSource: identity ? 'authentik' : undefined,
+      action: 'web.GET./api/admin/exports', result: 'error', metadata: { message: error instanceof Error ? error.message : 'Export failed.' } });
     return context.json({ error: 'export_failed', error_description: error instanceof Error ? error.message : 'Export failed.' }, 400);
   }
 });
@@ -249,6 +264,13 @@ app.put('/api/admin/providers/:kind', async context => adminApi(context, true, a
   auth = new AuthService(config, database);
   return { saved: true };
 }));
+app.get('/api/admin/audit', async context => adminApi(context, false, async identity => {
+  const query = z.object({ space_id: z.string().uuid().optional(), action: z.string().max(200).optional(),
+    result: z.enum(['success','error']).optional(), limit: z.coerce.number().int().min(1).max(200).default(100),
+    cursor: z.coerce.number().int().positive().optional() }).parse(context.req.query());
+  return audit.list(identity.userId, { spaceId: query.space_id, action: query.action, result: query.result,
+    limit: query.limit, cursor: query.cursor, systemAdmin: identity.isSystemAdmin });
+}));
 
 app.get('/health', async context => {
   try {
@@ -294,15 +316,29 @@ async function adminIdentity(context: Context): Promise<WebIdentity> {
 }
 
 async function adminApi(context: Context, write: boolean, handler: (identity: WebIdentity) => Promise<unknown>): Promise<Response> {
+  let identity: WebIdentity | undefined;
+  const action = `web.${context.req.method}.${context.req.path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')}`;
   try {
-    const identity = await adminIdentity(context);
+    identity = await adminIdentity(context);
     if (write && !webSessions.verifyCsrf(identity, context.req.header('x-csrf-token'))) {
+      await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action, result: 'error',
+        metadata: { reason: 'csrf_failed' } });
       return context.json({ error: 'csrf_failed', error_description: 'CSRF token is missing or invalid.' }, 403);
     }
-    return context.json(await handler(identity));
+    const result = await handler(identity);
+    const object = result && typeof result === 'object' ? result as Record<string, unknown> : {};
+    await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action,
+      spaceId: auditUuid(context.req.query('space_id')) ?? auditUuid(object.space_id) ?? auditUuid(object.spaceId),
+      targetId: auditUuid(context.req.param('id')) ?? auditUuid(object.id), result: 'success' });
+    return context.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Request failed.';
     const unauthorized = /session is|session is missing/i.test(message);
+    await audit.record({ actorUserId: identity?.userId, authSource: identity ? 'authentik' : undefined, action, result: 'error', metadata: { message } });
     return context.json({ error: unauthorized ? 'unauthorized' : 'request_failed', error_description: message }, unauthorized ? 401 : 400);
   }
+}
+
+function auditUuid(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : undefined;
 }

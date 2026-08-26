@@ -100,6 +100,7 @@ background_job_list          查询空间后台任务
 background_job_status        查询任务进度和错误
 background_job_cancel        请求取消任务
 background_job_retry         重试失败/已取消任务
+audit_list                   查询当前身份可见的安全审计事件
 space_list                  列出个人与共享空间
 space_create                创建共享空间
 space_list_members          查看成员与角色
@@ -235,6 +236,30 @@ WORKER_STALE_AFTER_SECONDS=900
 ```
 
 Web 管理后台新增“后台任务”页面，可以按空间发起向量重建、查看进度、取消和重试。队列操作始终要求空间成员关系；发起、取消和重试要求空间 `admin`，只读查看要求 `viewer`。
+
+## 安全审计
+
+MCP Tools、Web 管理 API、安装、Authentik 登录/退出统一写入 PostgreSQL `audit_logs`，同时保留本机 JSONL 作为应急副本。审计记录包含用户、Agent、空间、认证来源、动作、目标、结果、request ID 和时间。
+
+敏感字段会递归脱敏，包括：
+
+```text
+token / secret / password / apiKey
+authorization / cookie / code_verifier / nonce
+content / excerpt
+```
+
+长字符串截断到 500 字符，数组最多保留 100 项，嵌套深度受限。审计系统不会记录记忆正文、导入正文、Provider 密钥、Session 或 OIDC Token。审计写入使用 best-effort：审计存储临时失败不会把已经提交的业务事务错误地返回为失败。
+
+审计可见性：
+
+- 普通用户可看自己的活动；
+- 空间 owner/admin 可看该空间活动；
+- viewer/editor/contributor 不能借空间成员关系查看他人审计；
+- 系统管理员可查看全局审计；
+- SQL 查询层强制租户过滤，不能通过猜测事件 ID 绕过。
+
+Web 管理后台新增“审计日志”页面，支持空间、动作、结果筛选及游标分页。MCP 的 `audit_list` 复用相同过滤规则。
 
 ## Docker 部署
 
@@ -393,11 +418,12 @@ npm.cmd start
 - 重复检测、关系、反馈、冲突队列与人工解决；
 - JSON/Markdown 导入导出、任务错误报告与 MCP Resources；
 - PostgreSQL 持久化 Worker、并发安全领取、取消、重试和批量向量重建；
+- PostgreSQL/JSONL 统一安全审计、递归脱敏、租户过滤和审计后台；
 
 进行中：
 
 - 大文档异步分块导入和自动合并策略增强；
-- 审计后台和跨租户安全测试。
+- 更完整的跨租户越权测试矩阵。
 
 未完成的功能不会以伪造数据或静默降级方式对外宣称可用。
 

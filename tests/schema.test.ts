@@ -64,4 +64,11 @@ describe('memory database schema', () => {
     expect(sql).toContain('cancel_requested boolean');
     expect(sql).toContain('ingestion_jobs_queue_idx');
   });
+
+  it('indexes security audit actions and request correlation', async () => {
+    const sql = await readFile(new URL('../migrations/007_audit_security.sql', import.meta.url), 'utf8');
+    expect(sql).toContain('auth_source text');
+    expect(sql).toContain('request_id uuid');
+    expect(sql).toContain('audit_logs_action_created_idx');
+  });
 });

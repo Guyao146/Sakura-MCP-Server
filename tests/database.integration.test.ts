@@ -13,6 +13,9 @@ import { MemoryGovernanceService } from '../src/governance/service.js';
 import { MemoryTransferService } from '../src/transfer/service.js';
 import { JobRepository } from '../src/jobs/repository.js';
 import { BackgroundWorker } from '../src/jobs/worker.js';
+import { AuditLogger } from '../src/audit.js';
+import { unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -30,7 +33,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     const extension = await database.query<{ extversion: string }>("SELECT extversion FROM pg_extension WHERE extname='vector'");
     const migrations = await database.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(extension.rows[0].extversion).toBeTruthy();
-    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql', '006_background_jobs.sql']);
+    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql', '006_background_jobs.sql', '007_audit_security.sql']);
     await expect(settings.installation()).resolves.toMatchObject({ completed: false });
   });
 
@@ -281,5 +284,32 @@ describeDatabase('PostgreSQL installation integration', () => {
     const queued = await jobs.enqueue(identity.userId, identity.personalSpaceId, 'rebuild_embeddings');
     await expect(jobs.cancel(identity.userId, queued.id)).resolves.toMatchObject({ status: 'cancelled', cancel_requested: true });
     await expect(jobs.retry(identity.userId, queued.id)).resolves.toMatchObject({ status: 'pending', cancel_requested: false });
+  });
+
+  it('persists redacted audit events and enforces tenant visibility', async () => {
+    const repository = new MemoryRepository(database);
+    const ownerA = await repository.ensureUser('audit-owner-a', { email: 'audit-a@example.com', displayName: 'Audit A' });
+    const ownerB = await repository.ensureUser('audit-owner-b', { email: 'audit-b@example.com', displayName: 'Audit B' });
+    const spaces = new SpaceRepository(database);
+    const shared = await spaces.create(ownerA.userId, 'Audit Shared', 'shared audit test');
+    await database.query(`INSERT INTO space_members(space_id,user_id,role) VALUES($1,$2,'admin')`, [shared.id, ownerB.userId]);
+    const path = join(process.cwd(), 'data', `audit-test-${Date.now()}.jsonl`);
+    const audit = new AuditLogger(path, database);
+    await audit.record({ actorUserId: ownerA.userId, spaceId: ownerA.personalSpaceId, authSource: 'authentik',
+      action: 'test.private_a', result: 'success', metadata: { apiKey: 'must-not-leak', content: 'private body', safe: 'ok' } });
+    await audit.record({ actorUserId: ownerA.userId, spaceId: shared.id, authSource: 'authentik',
+      action: 'test.shared', result: 'error', metadata: { message: 'expected error' } });
+    await audit.record({ actorUserId: ownerB.userId, spaceId: ownerB.personalSpaceId, authSource: 'authentik',
+      action: 'test.private_b', result: 'success' });
+    const visibleA = await audit.list(ownerA.userId, { limit: 100 });
+    expect(visibleA.events.map(event => event.action)).toContain('test.private_a');
+    expect(visibleA.events.map(event => event.action)).not.toContain('test.private_b');
+    const visibleB = await audit.list(ownerB.userId, { spaceId: shared.id, limit: 100 });
+    expect(visibleB.events.map(event => event.action)).toContain('test.shared');
+    const global = await audit.list(ownerA.userId, { limit: 100, systemAdmin: true });
+    expect(global.events.map(event => event.action)).toContain('test.private_b');
+    const stored = await database.query<{ metadata: Record<string,string> }>("SELECT metadata FROM audit_logs WHERE action='test.private_a' ORDER BY id DESC LIMIT 1");
+    expect(stored.rows[0].metadata).toMatchObject({ apiKey: '[REDACTED]', content: '[REDACTED]', safe: 'ok' });
+    await unlink(path).catch(() => undefined);
   });
 });
