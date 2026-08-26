@@ -410,6 +410,8 @@ RATE_LIMIT_SETUP_PER_MINUTE=10
 
 详细升级步骤见 [`docs/upgrade-to-0.2.md`](docs/upgrade-to-0.2.md)，版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
 
+CI 还会运行 `npm audit --omit=dev --audit-level=high` 作为阻塞式依赖安全检查，并构建 Docker 镜像后运行 Trivy HIGH/CRITICAL 扫描。Trivy 当前为报告模式：扫描结果仍会输出，但不会因上游 Node/Debian 基础镜像的临时 CVE 基线变化阻塞应用测试和 Compose 校验；生产依赖审计仍会阻塞 CI。
+
 ## Agent 连接
 
 MCP URL：
