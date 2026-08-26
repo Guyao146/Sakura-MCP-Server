@@ -95,6 +95,11 @@ memory_feedback             记录召回是否有用及纠正意见
 memory_import               导入 JSON/Markdown 并返回任务摘要
 memory_import_status        查询导入任务与逐条错误
 memory_export               导出可迁移 JSON/Markdown
+embedding_rebuild_start      后台重建空间全部有效记忆向量
+background_job_list          查询空间后台任务
+background_job_status        查询任务进度和错误
+background_job_cancel        请求取消任务
+background_job_retry         重试失败/已取消任务
 space_list                  列出个人与共享空间
 space_create                创建共享空间
 space_list_members          查看成员与角色
@@ -209,6 +214,27 @@ memory://memories/{memoryId}       单条结构化记忆
 ```
 
 Resource URI 不是权限凭据；每次读取仍校验 Bearer 身份、Agent grant、空间成员关系和 `memory:read` scope。Web 管理台“记忆管理”页面提供导入、导出 JSON 和导出 Markdown。当前同步完成并记录任务，后续大文件会沿用同一任务协议迁移到 Worker。
+
+## PostgreSQL 后台 Worker
+
+服务内置持久化 Worker，首个任务类型是空间 Embedding 批量重建。任务使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 原子领取，因此多副本部署不会重复消费同一任务。任务记录包含：
+
+```text
+job_type / payload / status
+attempts / max_attempts / available_at
+locked_at / locked_by / cancel_requested
+total / completed / failed / errors
+```
+
+处理实例崩溃后，超过 `WORKER_STALE_AFTER_SECONDS` 的 processing 任务会自动回到队列。失败任务按指数退避自动重试，达到最大次数后标记 `failed`；用户也可取消和手工重试。取消是协作式的，Worker 每处理完一条记忆检查一次取消标记。
+
+```dotenv
+WORKER_ENABLED=true
+WORKER_POLL_INTERVAL_MS=2000
+WORKER_STALE_AFTER_SECONDS=900
+```
+
+Web 管理后台新增“后台任务”页面，可以按空间发起向量重建、查看进度、取消和重试。队列操作始终要求空间成员关系；发起、取消和重试要求空间 `admin`，只读查看要求 `viewer`。
 
 ## Docker 部署
 
@@ -366,10 +392,11 @@ npm.cmd start
 - LLM 候选记忆提取与批量保存；
 - 重复检测、关系、反馈、冲突队列与人工解决；
 - JSON/Markdown 导入导出、任务错误报告与 MCP Resources；
+- PostgreSQL 持久化 Worker、并发安全领取、取消、重试和批量向量重建；
 
 进行中：
 
-- 异步任务队列和自动合并策略增强；
+- 大文档异步分块导入和自动合并策略增强；
 - 审计后台和跨租户安全测试。
 
 未完成的功能不会以伪造数据或静默降级方式对外宣称可用。

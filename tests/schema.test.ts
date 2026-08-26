@@ -57,4 +57,11 @@ describe('memory database schema', () => {
     expect(source).toContain("'memory://memories/{memoryId}'");
     expect(source).not.toContain("'file://");
   });
+
+  it('defines a recoverable PostgreSQL background queue', async () => {
+    const sql = await readFile(new URL('../migrations/006_background_jobs.sql', import.meta.url), 'utf8');
+    expect(sql).toContain('locked_by text');
+    expect(sql).toContain('cancel_requested boolean');
+    expect(sql).toContain('ingestion_jobs_queue_idx');
+  });
 });

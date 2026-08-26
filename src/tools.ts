@@ -12,6 +12,7 @@ import { SpaceRepository } from './spaces/repository.js';
 import { SemanticMemoryService } from './semantic/service.js';
 import { MemoryGovernanceService } from './governance/service.js';
 import { MemoryTransferService } from './transfer/service.js';
+import { JobRepository } from './jobs/repository.js';
 
 const memoryType = z.enum(['fact', 'preference', 'event', 'task', 'person', 'project', 'summary', 'document', 'idea', 'other']);
 const text = (value: unknown) => ({
@@ -26,6 +27,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   const semantic = new SemanticMemoryService(database, getConfig);
   const governance = new MemoryGovernanceService(database);
   const transfer = new MemoryTransferService(database, semantic, governance);
+  const jobs = new JobRepository(database);
   const agents = new AgentRepository(database);
   const spaces = new SpaceRepository(database);
   const identity = repository.ensureUser(principal.id, { email: principal.email, displayName: principal.displayName });
@@ -192,6 +194,36 @@ export function createServer(database: Database, principal: Principal, audit: Au
     await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:export');
     return transfer.export(userId, spaceId, args.format);
   }));
+
+  server.registerTool('embedding_rebuild_start', {
+    description: 'Queue a persistent background job to rebuild all active embeddings in a space.',
+    inputSchema: { space_id: z.string().uuid().optional() }
+  }, guarded('embedding_rebuild_start', ['space:manage'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'space:manage');
+    return jobs.enqueue(userId, spaceId, 'rebuild_embeddings');
+  }));
+
+  server.registerTool('background_job_list', {
+    description: 'List recent background jobs in an authorized space.',
+    inputSchema: { space_id: z.string().uuid().optional(), limit: z.number().int().min(1).max(100).default(50) }
+  }, guarded('background_job_list', ['memory:read'], async (args, userId, personalSpaceId) => {
+    const spaceId = args.space_id ?? personalSpaceId;
+    await requireAgentSpaceScope(database, principal.agentId, spaceId, 'memory:read');
+    return { jobs: await jobs.list(userId, spaceId, args.limit) };
+  }));
+
+  server.registerTool('background_job_status', {
+    description: 'Read a background job status and progress.', inputSchema: { job_id: z.string().uuid() }
+  }, guarded('background_job_status', ['memory:read'], async (args, userId) => jobs.get(userId, args.job_id)));
+
+  server.registerTool('background_job_cancel', {
+    description: 'Request cancellation of a pending or processing background job.', inputSchema: { job_id: z.string().uuid() }
+  }, guarded('background_job_cancel', ['space:manage'], async (args, userId) => jobs.cancel(userId, args.job_id)));
+
+  server.registerTool('background_job_retry', {
+    description: 'Retry a failed or cancelled background job from the beginning.', inputSchema: { job_id: z.string().uuid() }
+  }, guarded('background_job_retry', ['space:manage'], async (args, userId) => jobs.retry(userId, args.job_id)));
 
   server.registerTool('space_list', {
     description: 'List personal and shared memory spaces visible to the current user.', inputSchema: {}

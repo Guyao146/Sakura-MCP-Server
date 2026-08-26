@@ -11,6 +11,8 @@ import { WebSessionService } from '../src/web/session.js';
 import { SemanticMemoryService } from '../src/semantic/service.js';
 import { MemoryGovernanceService } from '../src/governance/service.js';
 import { MemoryTransferService } from '../src/transfer/service.js';
+import { JobRepository } from '../src/jobs/repository.js';
+import { BackgroundWorker } from '../src/jobs/worker.js';
 
 const connectionString = process.env.DATABASE_TEST_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -28,7 +30,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     const extension = await database.query<{ extversion: string }>("SELECT extversion FROM pg_extension WHERE extname='vector'");
     const migrations = await database.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(extension.rows[0].extversion).toBeTruthy();
-    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql']);
+    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql', '006_background_jobs.sql']);
     await expect(settings.installation()).resolves.toMatchObject({ completed: false });
   });
 
@@ -235,5 +237,49 @@ describeDatabase('PostgreSQL installation integration', () => {
     ]));
     expect(partial).toMatchObject({ status: 'completed', completed: 1, failed: 1 });
     await expect(transfer.status(identity.userId, partial.jobId)).resolves.toMatchObject({ status: 'completed' });
+  });
+
+  it('claims jobs once and rebuilds embeddings through the persistent worker', async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'q'.repeat(32),
+      CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: '', OLLAMA_BASE_URL: 'http://worker-ollama.test',
+      OLLAMA_EMBEDDING_MODEL: 'worker-embed'
+    });
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('worker-owner', { email: 'worker@example.com', displayName: 'Worker Owner' });
+    await repository.remember(identity.userId, { spaceId: identity.personalSpaceId, type: 'fact', content: 'Worker rebuild memory one' });
+    await repository.remember(identity.userId, { spaceId: identity.personalSpaceId, type: 'fact', content: 'Worker rebuild memory two' });
+    const semantic = new SemanticMemoryService(database, () => config);
+    await semantic.configureStrategy(identity.userId, identity.personalSpaceId, {
+      providerType: 'ollama', embeddingModel: 'worker-embed', autoExtractEnabled: false,
+      autoMergeEnabled: false, conflictDetectionEnabled: true, privacyMode: true
+    });
+    const jobs = new JobRepository(database);
+    const queued = await jobs.enqueue(identity.userId, identity.personalSpaceId, 'rebuild_embeddings');
+    const claimed = await Promise.all([jobs.claim('claimer-a', 900), jobs.claim('claimer-b', 900)]);
+    expect(claimed.filter(Boolean)).toHaveLength(1);
+    await database.query(`UPDATE ingestion_jobs SET status='pending',attempts=0,locked_at=NULL,locked_by=NULL WHERE id=$1`, [queued.id]);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify({ embeddings: [[0, 1, 0]] }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    })));
+    const log = { info: vi.fn(), error: vi.fn() };
+    const worker = new BackgroundWorker(database, semantic, 1000, 900, log);
+    await expect(worker.runOnce()).resolves.toBe(true);
+    const finished = await jobs.get(identity.userId, queued.id);
+    expect(finished).toMatchObject({ status: 'completed' });
+    expect((finished.progress as { completed: number }).completed).toBe(2);
+    const embeddings = await database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM memory_embeddings me JOIN memories m ON m.id=me.memory_id
+       WHERE m.space_id=$1 AND me.status='ready'`, [identity.personalSpaceId]);
+    expect(Number(embeddings.rows[0].count)).toBe(2);
+  });
+
+  it('cancels pending jobs and permits an explicit retry', async () => {
+    const repository = new MemoryRepository(database);
+    const identity = await repository.ensureUser('job-cancel-owner', { displayName: 'Job Cancel Owner' });
+    const jobs = new JobRepository(database);
+    const queued = await jobs.enqueue(identity.userId, identity.personalSpaceId, 'rebuild_embeddings');
+    await expect(jobs.cancel(identity.userId, queued.id)).resolves.toMatchObject({ status: 'cancelled', cancel_requested: true });
+    await expect(jobs.retry(identity.userId, queued.id)).resolves.toMatchObject({ status: 'pending', cancel_requested: false });
   });
 });

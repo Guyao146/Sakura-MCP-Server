@@ -25,6 +25,9 @@ const environmentSchema = z.object({
   OLLAMA_BASE_URL: optionalUrl,
   OLLAMA_CHAT_MODEL: z.string().optional().or(z.literal('')),
   OLLAMA_EMBEDDING_MODEL: z.string().optional().or(z.literal('')),
+  WORKER_ENABLED: z.enum(['true', 'false']).default('true'),
+  WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60000).default(2000),
+  WORKER_STALE_AFTER_SECONDS: z.coerce.number().int().min(30).max(86400).default(900),
   AUDIT_LOG_PATH: z.string().default('./data/audit.jsonl')
 });
 
@@ -43,6 +46,7 @@ export interface AppConfig {
   setup: { token: string; encryptionKey: string };
   openaiCompatible?: { baseUrl: string; apiKey?: string; chatModel?: string; embeddingModel?: string };
   ollama?: { baseUrl: string; chatModel?: string; embeddingModel?: string };
+  worker: { enabled: boolean; pollIntervalMs: number; staleAfterSeconds: number };
   auditLogPath: string;
 }
 
@@ -74,6 +78,7 @@ export function loadConfig(env = process.env): AppConfig {
     setup: { token: value.SETUP_TOKEN, encryptionKey: value.CONFIG_ENCRYPTION_KEY },
     openaiCompatible: value.OPENAI_COMPATIBLE_BASE_URL ? { baseUrl: value.OPENAI_COMPATIBLE_BASE_URL.replace(/\/$/, ''), apiKey: value.OPENAI_COMPATIBLE_API_KEY || undefined, chatModel: value.OPENAI_COMPATIBLE_CHAT_MODEL || undefined, embeddingModel: value.OPENAI_COMPATIBLE_EMBEDDING_MODEL || undefined } : undefined,
     ollama: value.OLLAMA_BASE_URL ? { baseUrl: value.OLLAMA_BASE_URL.replace(/\/$/, ''), chatModel: value.OLLAMA_CHAT_MODEL || undefined, embeddingModel: value.OLLAMA_EMBEDDING_MODEL || undefined } : undefined,
+    worker: { enabled: value.WORKER_ENABLED === 'true', pollIntervalMs: value.WORKER_POLL_INTERVAL_MS, staleAfterSeconds: value.WORKER_STALE_AFTER_SECONDS },
     auditLogPath: value.AUDIT_LOG_PATH
   };
 }

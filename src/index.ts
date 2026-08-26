@@ -14,6 +14,8 @@ import { SpaceRepository } from './spaces/repository.js';
 import { SemanticMemoryService } from './semantic/service.js';
 import { MemoryGovernanceService } from './governance/service.js';
 import { MemoryTransferService } from './transfer/service.js';
+import { JobRepository } from './jobs/repository.js';
+import { BackgroundWorker } from './jobs/worker.js';
 import { createServer } from './tools.js';
 import { setupPage } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
@@ -38,6 +40,10 @@ const agents = new AgentRepository(database);
 const semantic = new SemanticMemoryService(database, () => config);
 const governance = new MemoryGovernanceService(database);
 const transfer = new MemoryTransferService(database, semantic, governance);
+const jobs = new JobRepository(database);
+const worker = new BackgroundWorker(database, semantic, baseConfig.worker.pollIntervalMs,
+  baseConfig.worker.staleAfterSeconds, logger);
+if (baseConfig.worker.enabled) worker.start();
 const app = createMcpHonoApp({ host: baseConfig.host, allowedHosts: [new URL(baseConfig.publicBaseUrl).hostname] });
 
 const setupGuard = async (context: Context, next: Next) => {
@@ -198,6 +204,18 @@ app.get('/api/admin/exports', async context => {
     return context.json({ error: 'export_failed', error_description: error instanceof Error ? error.message : 'Export failed.' }, 400);
   }
 });
+app.get('/api/admin/jobs', async context => adminApi(context, false, async identity => {
+  const query = z.object({ space_id: z.string().uuid(), limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(context.req.query());
+  return { jobs: await jobs.list(identity.userId, query.space_id, query.limit) };
+}));
+app.post('/api/admin/jobs/rebuild-embeddings', async context => adminApi(context, true, async identity => {
+  const body = z.object({ space_id: z.string().uuid() }).parse(await context.req.json());
+  return jobs.enqueue(identity.userId, body.space_id, 'rebuild_embeddings');
+}));
+app.post('/api/admin/jobs/:id/cancel', async context => adminApi(context, true, identity =>
+  jobs.cancel(identity.userId, z.string().uuid().parse(context.req.param('id')))));
+app.post('/api/admin/jobs/:id/retry', async context => adminApi(context, true, identity =>
+  jobs.retry(identity.userId, z.string().uuid().parse(context.req.param('id')))));
 app.get('/api/admin/agents', async context => adminApi(context, false, identity => agents.list(identity.userId)));
 app.post('/api/admin/agents', async context => adminApi(context, true, async identity => {
   const body = z.object({ name: z.string().min(1).max(120), scopes: agentScopeSchema, expires_at: z.iso.datetime().optional() }).parse(await context.req.json());
@@ -262,6 +280,14 @@ app.all('/mcp', async context => {
 });
 
 serve({ fetch: app.fetch, hostname: baseConfig.host, port: baseConfig.port }, info => logger.info({ host: baseConfig.host, port: info.port }, 'Sakura MCP Server listening'));
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    logger.info({ signal }, 'Sakura MCP Server shutting down');
+    worker.stop();
+    void database.close().finally(() => process.exit(0));
+  });
+}
 
 async function adminIdentity(context: Context): Promise<WebIdentity> {
   return webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));

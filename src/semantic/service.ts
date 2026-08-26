@@ -107,6 +107,13 @@ export class SemanticMemoryService {
     return resolved.provider.extractMemories(text, resolved.chatModel);
   }
 
+  async rebuildEmbedding(userId: string, memoryId: string): Promise<{ memoryId: string; status: string }> {
+    const memory = await this.repository.get(userId, memoryId);
+    await requireSpaceRole(this.database, userId, memory.space_id, 'editor');
+    const status = await this.embedMemory(userId, memory).catch(() => 'failed');
+    return { memoryId, status };
+  }
+
   async extractAndRemember(userId: string, spaceId: string, text: string, sourceAgent?: string) {
     const candidates = await this.extract(userId, spaceId, text);
     const strategy = await this.strategy(userId, spaceId);
