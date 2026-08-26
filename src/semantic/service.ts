@@ -80,20 +80,23 @@ export class SemanticMemoryService {
     try { queryEmbedding = (await resolved.provider.embed([query], resolved.embeddingModel))[0]; }
     catch { return this.repository.search(userId, spaceId, query, limit, types, tags); }
     if (!queryEmbedding?.length) return this.repository.search(userId, spaceId, query, limit, types, tags);
-    const vector = `[${queryEmbedding.join(',')}]`;
-    const result = await this.database.query<MemoryRecord & { score: number }>(
-      `SELECT m.*,
-       (0.60*CASE WHEN me.status='ready' AND me.dimensions=$5 AND me.embedding IS NOT NULL
-          THEN 1-(me.embedding <=> $3::vector) ELSE 0 END
-        + 0.25*LEAST(ts_rank_cd(m.search_vector,websearch_to_tsquery('simple',$4))*4,1)
-        + 0.10*m.importance + 0.05*m.confidence) AS score
+    const result = await this.database.query<MemoryRecord & { text_rank: number; embedding_text: string | null; dimensions: number | null }>(
+      `SELECT m.*,ts_rank_cd(m.search_vector,websearch_to_tsquery('simple',$2)) AS text_rank,
+       CASE WHEN me.status='ready' THEN me.embedding::text ELSE NULL END AS embedding_text,me.dimensions
        FROM memories m LEFT JOIN memory_embeddings me ON me.memory_id=m.id
        WHERE m.space_id=$1 AND m.status IN ('active','pending_confirmation') AND m.deleted_at IS NULL
        AND (m.expires_at IS NULL OR m.expires_at>now())
-       AND ($6::text[] IS NULL OR m.type::text=ANY($6)) AND ($7::text[] IS NULL OR m.tags&&$7)
-       ORDER BY score DESC LIMIT $2`,
-      [spaceId, limit, vector, query, queryEmbedding.length, types?.length ? types : null, tags?.length ? tags : null]);
-    return result.rows.length ? result.rows : this.repository.search(userId, spaceId, query, limit, types, tags);
+       AND ($3::text[] IS NULL OR m.type::text=ANY($3)) AND ($4::text[] IS NULL OR m.tags&&$4)
+       ORDER BY m.updated_at DESC LIMIT 1000`,
+      [spaceId, query, types?.length ? types : null, tags?.length ? tags : null]);
+    return result.rows.map(row => {
+      const candidate = row.dimensions === queryEmbedding.length && row.embedding_text ? parseVector(row.embedding_text) : undefined;
+      const semantic = candidate ? cosineSimilarity(queryEmbedding, candidate) : 0;
+      const score = 0.60 * semantic + 0.25 * Math.min(Number(row.text_rank) * 4, 1)
+        + 0.10 * Number(row.importance) + 0.05 * Number(row.confidence);
+      const { embedding_text: _embedding, dimensions: _dimensions, text_rank: _rank, ...memory } = row;
+      return { ...memory, score };
+    }).sort((left, right) => right.score - left.score).slice(0, limit);
   }
 
   async extract(userId: string, spaceId: string, text: string): Promise<ExtractedMemory[]> {
@@ -160,4 +163,18 @@ export class SemanticMemoryService {
     if (capability === 'embedding' && !resolved.embeddingModel) return undefined;
     return resolved;
   }
+}
+
+function parseVector(value: string): number[] {
+  return value.slice(1, -1).split(',').map(Number);
+}
+
+function cosineSimilarity(left: number[], right: number[]): number {
+  if (left.length !== right.length || left.length === 0) return 0;
+  let dot = 0; let leftNorm = 0; let rightNorm = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    dot += left[index] * right[index]; leftNorm += left[index] ** 2; rightNorm += right[index] ** 2;
+  }
+  if (!leftNorm || !rightNorm) return 0;
+  return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
 }
