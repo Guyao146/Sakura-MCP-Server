@@ -70,7 +70,7 @@ describe('memory database schema', () => {
     expect(compose).toContain('bootstrap-secrets:');
     expect(compose).toContain('POSTGRES_PASSWORD_FILE: /run/sakura-secrets/postgres-password');
     expect(compose).toContain('runtime-secrets:/run/sakura-secrets:ro');
-    expect(compose).toContain('ghcr.io/guyao146/sakura-mcp-server:0.2.9');
+    expect(compose).toMatch(/ghcr\.io\/guyao146\/sakura-mcp-server:0\.2\.\d+/);
     expect(compose).toContain('127.0.0.1:${MCP_HOST_PORT:-3001}:3000');
     expect(compose).not.toContain('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?');
     expect(compose).not.toMatch(/(?<!\$)\$(?:value|1)\b/);

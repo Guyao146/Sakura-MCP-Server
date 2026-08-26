@@ -2,6 +2,12 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.11] - 2026-08-26
+
+### Fixed
+
+- Make the Compose regression test validate the versioned GHCR image pattern instead of a stale hard-coded patch tag.
+
 ## [0.2.10] - 2026-08-26
 
 ### Fixed
