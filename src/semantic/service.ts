@@ -83,11 +83,13 @@ export class SemanticMemoryService {
     const vector = `[${queryEmbedding.join(',')}]`;
     const result = await this.database.query<MemoryRecord & { score: number }>(
       `SELECT m.*,
-       (0.60*(1-(me.embedding <=> $3::vector)) + 0.25*LEAST(ts_rank_cd(m.search_vector,websearch_to_tsquery('simple',$4))*4,1)
+       (0.60*CASE WHEN me.status='ready' AND me.dimensions=$5 AND me.embedding IS NOT NULL
+          THEN 1-(me.embedding <=> $3::vector) ELSE 0 END
+        + 0.25*LEAST(ts_rank_cd(m.search_vector,websearch_to_tsquery('simple',$4))*4,1)
         + 0.10*m.importance + 0.05*m.confidence) AS score
-       FROM memories m JOIN memory_embeddings me ON me.memory_id=m.id
+       FROM memories m LEFT JOIN memory_embeddings me ON me.memory_id=m.id
        WHERE m.space_id=$1 AND m.status IN ('active','pending_confirmation') AND m.deleted_at IS NULL
-       AND me.status='ready' AND me.dimensions=$5 AND (m.expires_at IS NULL OR m.expires_at>now())
+       AND (m.expires_at IS NULL OR m.expires_at>now())
        AND ($6::text[] IS NULL OR m.type::text=ANY($6)) AND ($7::text[] IS NULL OR m.tags&&$7)
        ORDER BY score DESC LIMIT $2`,
       [spaceId, limit, vector, query, queryEmbedding.length, types?.length ? types : null, tags?.length ? tags : null]);
