@@ -9,6 +9,7 @@ fi
 
 . "$secret_file"
 export POSTGRES_PASSWORD SETUP_TOKEN CONFIG_ENCRYPTION_KEY MCP_API_KEYS
-export DATABASE_URL="postgresql://sakura:${POSTGRES_PASSWORD}@postgres:5432/sakura_memory"
+export POSTGRES_HOST="${POSTGRES_HOST:-postgres}"
+export DATABASE_URL="postgresql://sakura:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/sakura_memory"
 
 exec node /app/dist/index.js

@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.8] - 2026-08-26
+
+### Fixed
+
+- Use a stable PostgreSQL container hostname from the application entrypoint in Portainer/宝塔 Compose deployments.
+- Keep PostgreSQL DNS retry behavior while avoiding reliance on the transient Compose service alias alone.
+
 ## [0.2.7] - 2026-08-26
 
 ### Fixed

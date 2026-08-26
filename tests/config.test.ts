@@ -23,4 +23,9 @@ describe('loadConfig', () => {
     expect(config.openaiCompatible?.baseUrl).toBe('https://api.example.com/v1');
     expect(config.ollama?.baseUrl).toBe('http://localhost:11434');
   });
+
+  it('uses a stable PostgreSQL host for panel-managed Compose', () => {
+    const config = loadConfig({ ...base });
+    expect(config.database.host).toBe('postgres');
+  });
 });
