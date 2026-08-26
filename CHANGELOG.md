@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.5] - 2026-08-26
+
+### Fixed
+
+- Align the Compose version regression test with the `0.2.4` startup-retry image change and publish a clean release tag.
+- Make `0.2.5` the recommended no-`.env` Compose image.
+
 ## [0.2.4] - 2026-08-26
 
 ### Fixed
