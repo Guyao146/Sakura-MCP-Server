@@ -16,9 +16,9 @@ services:
       - |
         umask 077
         mkdir -p /secrets
-        valid_or_empty() { value="$1"; case "$value" in ""|*replace-*) printf '%s' '' ;; *) printf '%s' "$value" ;; esac; }
-        generate() { head -c "$1" /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
-        shell_quote() { value="$1"; value=$$(printf '%s' "$${value}" | sed "s/'/'\\\\''/g"); printf "'%s'" "$${value}"; }
+        valid_or_empty() { value="$$1"; case "$${value}" in ""|*replace-*) printf '%s' '' ;; *) printf '%s' "$${value}" ;; esac; }
+        generate() { head -c "$$1" /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
+        shell_quote() { value="$$1"; value=$$(printf '%s' "$${value}" | sed "s/'/'\\\\''/g"); printf "'%s'" "$${value}"; }
         postgres_password=''
         setup_token=''
         encryption_key=''
@@ -63,7 +63,7 @@ services:
       retries: 10
 
   sakura-mcp:
-    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.2}
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.3}
     pull_policy: always
     restart: unless-stopped
     environment:

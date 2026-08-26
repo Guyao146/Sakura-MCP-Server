@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.3] - 2026-08-26
+
+### Fixed
+
+- Escaped shell variables in the no-`.env` Compose bootstrap script so Docker Compose does not warn about an unset `value` variable.
+- Bootstrap-generated secrets are preserved across repeated starts and safely loaded by the non-root application container.
+
 ## [0.2.2] - 2026-08-26
 
 ### Changed
