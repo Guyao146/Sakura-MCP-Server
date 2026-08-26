@@ -2,6 +2,12 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.7] - 2026-08-26
+
+### Fixed
+
+- Align the Compose regression test and production image tag after the no-`.env` bootstrap and PostgreSQL retry fixes.
+
 ## [0.2.6] - 2026-08-26
 
 ### Fixed
