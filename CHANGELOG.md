@@ -2,7 +2,7 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-08-26
 
 ### Added
 
