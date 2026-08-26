@@ -274,6 +274,19 @@ chmod +x scripts/install.sh
 ./scripts/install.sh https://mcp.example.com
 ```
 
+Windows PowerShell / Docker Desktop：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install.ps1 -PublicUrl https://mcp.example.com
+```
+
+本地源码构建模式：
+
+```powershell
+.\scripts\install.ps1 -PublicUrl https://mcp.example.com -LocalBuild
+```
+
 也可以不传参数，脚本会交互询问 HTTPS 地址：
 
 ```bash
@@ -297,6 +310,7 @@ chmod +x scripts/install.sh
 
 ```bash
 cd Sakura-MCP-Server
+# Compose 不会自动读取 .env.example，必须先创建 .env
 cp .env.example .env
 # 修改数据库密码、PUBLIC_BASE_URL，并生成 SETUP_TOKEN 和 CONFIG_ENCRYPTION_KEY
 chmod 600 .env

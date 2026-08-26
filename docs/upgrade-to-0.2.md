@@ -23,6 +23,8 @@ docker compose logs -f sakura-mcp
 
 新部署也可以直接运行仓库中的 `scripts/install.sh`。脚本只适用于没有 `.env` 的首次部署，发现已有 `.env` 会停止，不会覆盖现有密钥。
 
+Windows Docker Desktop 用户可以运行 `scripts/install.ps1`；PowerShell 执行策略受限时，先执行 `Set-ExecutionPolicy -Scope Process Bypass`。生产模式会拉取 GHCR 镜像，只有显式传入 `-LocalBuild` 才会本地构建。
+
 生产 `docker-compose.yml` 默认拉取 `ghcr.io/guyao146/sakura-mcp-server:0.2.1`，不需要服务器保存源码或安装 Node.js。源码开发/本地构建请额外使用 `docker-compose.dev.yml`。
 
 With `AUTO_MIGRATE=true`, migrations run in filename order at startup. Do not delete entries from `schema_migrations`.
