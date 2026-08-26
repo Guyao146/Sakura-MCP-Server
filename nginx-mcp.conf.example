@@ -25,7 +25,11 @@ server {
         proxy_buffering off;
     }
     location = /setup { proxy_pass http://127.0.0.1:3001; }
-    location ^~ /api/setup/ { proxy_pass http://127.0.0.1:3001; }
+    location ^~ /api/setup/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header X-Setup-Token $http_x_setup_token;
+        proxy_read_timeout 30s;
+    }
     location ^~ /auth/ { proxy_pass http://127.0.0.1:3001; }
     location = /admin { proxy_pass http://127.0.0.1:3001; }
     location = /api/me { proxy_pass http://127.0.0.1:3001; }

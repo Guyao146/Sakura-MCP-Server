@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.10] - 2026-08-26
+
+### Fixed
+
+- Add visible loading and 15-second timeout feedback to the installation environment check.
+- Explicitly forward `X-Setup-Token` through the Nginx setup API proxy.
+
 ## [0.2.9] - 2026-08-26
 
 ### Fixed
