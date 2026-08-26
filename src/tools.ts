@@ -22,7 +22,7 @@ const text = (value: unknown) => ({
 const failure = (message: string) => ({ content: [{ type: 'text' as const, text: message }], isError: true });
 
 export function createServer(database: Database, principal: Principal, audit: AuditLogger, getConfig: () => AppConfig): McpServer {
-  const server = new McpServer({ name: 'Sakura-MCP-Server', version: '0.2.0' });
+  const server = new McpServer({ name: 'Sakura-MCP-Server', version: '0.2.2' });
   const repository = new MemoryRepository(database);
   const semantic = new SemanticMemoryService(database, getConfig);
   const governance = new MemoryGovernanceService(database);

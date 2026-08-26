@@ -295,12 +295,12 @@ app.get('/health', async context => {
          count(*) FILTER(WHERE status='processing')::text AS processing,
          count(*) FILTER(WHERE status='failed')::text AS failed FROM ingestion_jobs`)
     ]);
-    return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: '0.2.0',
+    return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: '0.2.2',
       database: 'ok', pgvector: vector.rows[0]?.version ?? 'missing', installed: installation.completed,
       worker: { enabled: baseConfig.worker.enabled, pending: Number(queue.rows[0].pending),
         processing: Number(queue.rows[0].processing), failed: Number(queue.rows[0].failed) } });
   } catch {
-    return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: '0.2.0', database: 'unavailable' }, 503);
+    return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: '0.2.2', database: 'unavailable' }, 503);
   }
 });
 app.get('/.well-known/oauth-protected-resource/mcp', context => {

@@ -1,15 +1,61 @@
 name: sakura-mcp-server
 
 services:
+  bootstrap-secrets:
+    image: alpine:3.22
+    restart: "no"
+    environment:
+      BOOTSTRAP_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      BOOTSTRAP_SETUP_TOKEN: ${SETUP_TOKEN:-}
+      BOOTSTRAP_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:-}
+      BOOTSTRAP_API_KEY: ${MCP_API_KEYS:-}
+    volumes:
+      - runtime-secrets:/secrets
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        umask 077
+        mkdir -p /secrets
+        valid_or_empty() { value="$1"; case "$value" in ""|*replace-*) printf '%s' '' ;; *) printf '%s' "$value" ;; esac; }
+        generate() { head -c "$1" /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
+        shell_quote() { value="$1"; value=$$(printf '%s' "$${value}" | sed "s/'/'\\\\''/g"); printf "'%s'" "$${value}"; }
+        postgres_password=''
+        setup_token=''
+        encryption_key=''
+        api_key=''
+        if [ -s /secrets/postgres-password ]; then postgres_password="$$(cat /secrets/postgres-password)"; fi
+        if [ -s /secrets/app.env ]; then . /secrets/app.env; postgres_password="$${POSTGRES_PASSWORD}"; setup_token="$${SETUP_TOKEN}"; encryption_key="$${CONFIG_ENCRYPTION_KEY}"; api_key="$${MCP_API_KEYS}"; fi
+        candidate="$$(valid_or_empty "$${BOOTSTRAP_POSTGRES_PASSWORD}")"; [ -n "$${candidate}" ] && postgres_password="$${candidate}"
+        candidate="$$(valid_or_empty "$${BOOTSTRAP_SETUP_TOKEN}")"; [ -n "$${candidate}" ] && setup_token="$${candidate}"
+        candidate="$$(valid_or_empty "$${BOOTSTRAP_ENCRYPTION_KEY}")"; [ -n "$${candidate}" ] && encryption_key="$${candidate}"
+        candidate="$$(valid_or_empty "$${BOOTSTRAP_API_KEY}")"; [ -n "$${candidate}" ] && api_key="$${candidate}"
+        [ -n "$${postgres_password}" ] || postgres_password="$$(generate 48)"
+        [ -n "$${setup_token}" ] || setup_token="$$(generate 48)"
+        [ -n "$${encryption_key}" ] || encryption_key="$$(generate 32)"
+        [ -n "$${api_key}" ] || api_key="bootstrap-admin:$$(generate 48):memory:read|memory:write|memory:update|memory:delete|memory:export|space:create|space:manage|member:manage|agent:manage|admin:system"
+        if [ ! -s /secrets/postgres-password ]; then printf '%s' "$${postgres_password}" > /secrets/postgres-password; fi
+        if [ ! -s /secrets/app.env ]; then
+          printf 'POSTGRES_PASSWORD=%s\nSETUP_TOKEN=%s\nCONFIG_ENCRYPTION_KEY=%s\nMCP_API_KEYS=%s\n' \
+            "$$(shell_quote "$${postgres_password}")" "$$(shell_quote "$${setup_token}")" \
+            "$$(shell_quote "$${encryption_key}")" "$$(shell_quote "$${api_key}")" > /secrets/app.env
+        fi
+        # The application image runs as an unprivileged user. The volume is
+        # private to this Compose project and mounted read-only by the app.
+        chmod 644 /secrets/postgres-password /secrets/app.env
+
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB: sakura_memory
       POSTGRES_USER: sakura
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请先复制 .env.example 为 .env 并填写 POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/sakura-secrets/postgres-password
+    depends_on:
+      bootstrap-secrets:
+        condition: service_completed_successfully
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - runtime-secrets:/run/sakura-secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sakura -d sakura_memory"]
       interval: 10s
@@ -17,11 +63,38 @@ services:
       retries: 10
 
   sakura-mcp:
-    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.1}
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.2}
     pull_policy: always
     restart: unless-stopped
-    env_file: .env
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-20}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:-}
+      AUTHENTIK_AUDIENCE: ${AUTHENTIK_AUDIENCE:-}
+      AUTHENTIK_JWKS_URI: ${AUTHENTIK_JWKS_URI:-}
+      AUTHENTIK_SCOPE_CLAIM: ${AUTHENTIK_SCOPE_CLAIM:-scope}
+      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
+      OPENAI_COMPATIBLE_CHAT_MODEL: ${OPENAI_COMPATIBLE_CHAT_MODEL:-}
+      OPENAI_COMPATIBLE_EMBEDDING_MODEL: ${OPENAI_COMPATIBLE_EMBEDDING_MODEL:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-}
+      WORKER_ENABLED: ${WORKER_ENABLED:-true}
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-2000}
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-900}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      RATE_LIMIT_MCP_PER_MINUTE: ${RATE_LIMIT_MCP_PER_MINUTE:-120}
+      RATE_LIMIT_WEB_PER_MINUTE: ${RATE_LIMIT_WEB_PER_MINUTE:-300}
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-20}
+      RATE_LIMIT_SETUP_PER_MINUTE: ${RATE_LIMIT_SETUP_PER_MINUTE:-10}
+      AUDIT_LOG_PATH: ${AUDIT_LOG_PATH:-/app/data/audit.jsonl}
     depends_on:
+      bootstrap-secrets:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     extra_hosts:
@@ -29,6 +102,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
+      - runtime-secrets:/run/sakura-secrets:ro
       - ./data:/app/data
     security_opt:
       - no-new-privileges:true
@@ -42,3 +116,4 @@ services:
 
 volumes:
   postgres-data:
+  runtime-secrets:

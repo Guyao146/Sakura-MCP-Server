@@ -65,6 +65,15 @@ describe('memory database schema', () => {
     expect(sql).toContain('ingestion_jobs_queue_idx');
   });
 
+  it('supports Compose startup without a host .env file', async () => {
+    const compose = await readFile(new URL('../docker-compose.yml', import.meta.url), 'utf8');
+    expect(compose).toContain('bootstrap-secrets:');
+    expect(compose).toContain('POSTGRES_PASSWORD_FILE: /run/sakura-secrets/postgres-password');
+    expect(compose).toContain('runtime-secrets:/run/sakura-secrets:ro');
+    expect(compose).toContain('ghcr.io/guyao146/sakura-mcp-server:0.2.2');
+    expect(compose).not.toContain('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?');
+  });
+
   it('indexes security audit actions and request correlation', async () => {
     const sql = await readFile(new URL('../migrations/007_audit_security.sql', import.meta.url), 'utf8');
     expect(sql).toContain('auth_source text');

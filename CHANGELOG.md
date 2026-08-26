@@ -2,6 +2,16 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.2] - 2026-08-26
+
+### Changed
+
+- Production Compose can start without a pre-created `.env` file.
+- A one-shot `bootstrap-secrets` container generates and persists runtime secrets in a private Docker volume.
+- PostgreSQL uses `POSTGRES_PASSWORD_FILE`; the application reads generated secrets through a read-only secret volume.
+- The default GHCR image is now `ghcr.io/guyao146/sakura-mcp-server:0.2.2`.
+- Windows PowerShell and Linux first-run installers remain available for domain-specific setup.
+
 ## [0.2.1] - 2026-08-26
 
 ### Added

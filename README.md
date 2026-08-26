@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.1
+ghcr.io/guyao146/sakura-mcp-server:0.2.2
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +351,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.1
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.2
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -364,7 +364,46 @@ Compose 默认：
 - PostgreSQL 数据保存在命名卷 `sakura-mcp-server_postgres-data`；
 - 审计 JSONL 保存在当前目录 `data/`；
 - 应用使用只读文件系统、非 root 用户、丢弃全部 Linux capabilities 和 PID 限制；
-- 生产 Compose 只拉取 GHCR 镜像，源码构建仅由 `docker-compose.dev.yml` 覆盖启用。
+生产 Compose 只拉取 GHCR 镜像，源码构建仅由 `docker-compose.dev.yml` 覆盖启用。
+
+### 无 `.env` 直接启动
+
+生产 `docker-compose.yml` 现在可以在没有 `.env` 的目录直接执行：
+
+```bash
+docker compose up -d
+```
+
+注意：Docker Desktop/Portainer 的项目变量中如果填写了旧的 `POSTGRES_PASSWORD`、`SETUP_TOKEN` 或 `MCP_API_KEYS`，它们只会用于首次创建 `runtime-secrets`；已有 secret 卷不会被覆盖。重新初始化前必须先备份并删除该 Compose 项目的 `runtime-secrets` 卷。
+
+Compose 会先启动一次性 `bootstrap-secrets` 容器，自动生成并保存：
+
+```text
+PostgreSQL 密码
+SETUP_TOKEN
+CONFIG_ENCRYPTION_KEY
+bootstrap Agent Key
+```
+
+生成的密钥只保存在 Docker 命名卷 `runtime-secrets`，应用以只读方式挂载。这样 Docker Desktop、Portainer 或直接上传 Compose 文件时不会再因为缺少 `POSTGRES_PASSWORD` 而创建失败。
+
+首次启动后需要从 secret 卷读取 `SETUP_TOKEN` 才能打开安装向导。请在服务器上执行以下命令，并只在安全终端查看输出：
+
+```bash
+docker compose run --rm --no-deps --entrypoint sh bootstrap-secrets -c 'cat /secrets/app.env'
+```
+
+输出中的 `SETUP_TOKEN` 只用于第一次安装，`CONFIG_ENCRYPTION_KEY` 必须长期备份。不要把输出复制到聊天、工单或 Git。
+
+如果要设置域名、Provider 或其他非密钥配置，可以在 Compose 项目环境变量中填写，或者在同目录创建 `.env`。`.env` 中提供的密钥只会在第一次初始化 secret 卷时使用；已有 secret 卷不会被覆盖。
+
+查看安装向导地址：
+
+```text
+http://localhost:3000/setup
+```
+
+生产环境仍建议先配置 HTTPS Nginx，然后访问 `https://你的域名/setup`。
 
 生成安装密钥：
 
@@ -503,7 +542,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.1`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.2`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 
