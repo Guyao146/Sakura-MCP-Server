@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Script } from 'node:vm';
 import { loadConfig } from '../src/config.js';
 import { adminPage } from '../src/web/admin-page.js';
-import { WebSessionService, type WebIdentity } from '../src/web/session.js';
+import { describeTokenExchangeFailure, WebSessionService, type WebIdentity } from '../src/web/session.js';
 
 const config = loadConfig({
   PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: 'postgresql://localhost/test',
@@ -81,5 +81,31 @@ describe('Web management security', () => {
     const script = adminPage.match(/<script>([\s\S]*)<\/script>/)?.[1];
     expect(script).toBeTruthy();
     expect(() => new Script(script!)).not.toThrow();
+  });
+
+  it('shows safe Authentik token endpoint errors with actionable guidance', async () => {
+    const invalidClient = new Response(JSON.stringify({
+      error: 'invalid_client', error_description: 'Client authentication failed', request_id: 'secret-request-id'
+    }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    const message = await describeTokenExchangeFailure(invalidClient);
+    expect(message).toContain('invalid_client');
+    expect(message).toContain('Client authentication failed');
+    expect(message).toContain('客户端类型为 Public');
+    expect(message).not.toContain('secret-request-id');
+
+    const invalidGrant = await describeTokenExchangeFailure(new Response(JSON.stringify({
+      error: 'invalid_grant', error_description: 'Code is invalid\n'
+    }), { status: 400 }));
+    expect(invalidGrant).toContain('/auth/callback');
+    expect(invalidGrant).not.toContain('\n');
+  });
+
+  it('bounds and sanitizes non-JSON Authentik token errors', async () => {
+    const message = await describeTokenExchangeFailure(new Response('bad\u0000\nresponse', { status: 502 }));
+    expect(message).toBe('Authentik 令牌交换失败（HTTP 502）：bad response');
+    const oversized = await describeTokenExchangeFailure(new Response('x', {
+      status: 502, headers: { 'Content-Length': String(64 * 1024 + 1) }
+    }));
+    expect(oversized).toBe('Authentik 令牌交换失败（HTTP 502）。');
   });
 });

@@ -69,7 +69,7 @@ export class WebSessionService {
         redirect_uri: `${this.getConfig().publicBaseUrl}/auth/callback`, code_verifier: attempt.code_verifier }),
       signal: AbortSignal.timeout(15_000)
     });
-    if (!tokenResponse.ok) throw new Error(`Authentik token exchange failed (${tokenResponse.status}).`);
+    if (!tokenResponse.ok) throw new Error(await describeTokenExchangeFailure(tokenResponse));
     const tokens = await tokenResponse.json() as { id_token?: string };
     if (!tokens.id_token) throw new Error('Authentik token response did not include id_token.');
     const jwks = createRemoteJWKSet(new URL(auth.jwksUri));
@@ -144,4 +144,48 @@ export class WebSessionService {
     if (!auth?.clientId || !auth.authorizationUrl || !auth.tokenUrl) throw new Error('Authentik browser login is not configured.');
     return auth as Required<NonNullable<AppConfig['authentik']>>;
   }
+}
+
+export async function describeTokenExchangeFailure(response: Response): Promise<string> {
+  const prefix = `Authentik 令牌交换失败（HTTP ${response.status}）`;
+  let raw = '';
+  try { raw = await readBoundedResponse(response, 64 * 1024); }
+  catch { return `${prefix}。`; }
+  let decoded: unknown;
+  try { decoded = JSON.parse(raw); }
+  catch { return `${prefix}${raw ? `：${safeErrorText(raw)}` : '。'}`; }
+  const object = decoded && typeof decoded === 'object' ? decoded as Record<string, unknown> : {};
+  const code = typeof object.error === 'string' && /^[A-Za-z0-9_.-]{1,100}$/.test(object.error) ? object.error : '';
+  const description = typeof object.error_description === 'string' ? safeErrorText(object.error_description) : '';
+  const detail = [code, description].filter(Boolean).join('：');
+  const guidance = code === 'invalid_client'
+    ? '请确认 Authentik OAuth2/OIDC 提供方的客户端类型为 Public（公共客户端），并且 Client ID 与安装配置一致。'
+    : code === 'invalid_grant'
+      ? '请确认回调地址精确为当前域名的 /auth/callback，并重新发起登录以获取新的授权码。'
+      : '';
+  return `${prefix}${detail ? `：${detail}` : ''}。${guidance}`;
+}
+
+async function readBoundedResponse(response: Response, limit: number): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) throw new Error('Response is too large.');
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let output = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error('Response is too large.');
+      output += decoder.decode(value, { stream: true });
+    }
+    return output + decoder.decode();
+  } finally { await reader.cancel().catch(() => undefined); }
+}
+
+function safeErrorText(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
 }

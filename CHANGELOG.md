@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.19] - 2026-08-27
+
+### Fixed
+
+- Surface bounded and sanitized Authentik OAuth token endpoint `error` and `error_description` values on callback failures.
+- Add actionable Public Client guidance for `invalid_client` and redirect URI/new-login guidance for `invalid_grant` without exposing request IDs or token response secrets.
+
 ## [0.2.18] - 2026-08-27
 
 ### Added
