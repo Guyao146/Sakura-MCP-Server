@@ -13,21 +13,25 @@ server {
     add_header Referrer-Policy no-referrer always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
+    # Keep the public host when proxying. Without this, application host
+    # validation sees 127.0.0.1:3001 and can reject setup/admin requests.
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header X-Setup-Token $http_x_setup_token;
+
     location = /mcp {
         proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Authorization $http_authorization;
         proxy_read_timeout 120s;
         proxy_send_timeout 120s;
         proxy_buffering off;
     }
     location = /setup { proxy_pass http://127.0.0.1:3001; }
+    location = /assets/setup.js { proxy_pass http://127.0.0.1:3001; }
     location ^~ /api/setup/ {
         proxy_pass http://127.0.0.1:3001;
-        proxy_set_header X-Setup-Token $http_x_setup_token;
         proxy_read_timeout 30s;
     }
     location ^~ /auth/ { proxy_pass http://127.0.0.1:3001; }

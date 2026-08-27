@@ -10,23 +10,66 @@ export const setupPage = `<!doctype html>
 <body><main>
   <header><h1><span class="brand">Sakura</span>-MCP-Server</h1><div class="sub">多用户 AI 长期记忆平台 · 首次安装向导</div></header>
   <div class="steps" id="steps"></div>
-  <section data-step="0" class="active"><h2>欢迎</h2><p>向导会检查数据库、配置 Authentik，并可连接 OpenAI-compatible 或 Ollama。数据库地址、安装令牌和配置加密密钥必须预先写入服务器 <code>.env</code>。</p><div class="notice">安装完成后向导将锁定。模型 API Key 使用 AES-256-GCM 加密后存入数据库，不会返回浏览器。</div><label>安装令牌（SETUP_TOKEN）</label><input id="setupToken" type="password" autocomplete="off" placeholder="服务器 .env 中的 SETUP_TOKEN"><div class="actions"><span></span><button onclick="diagnose()">检查环境</button></div><div id="diag" class="result">等待检查……</div></section>
-  <section data-step="1"><h2>Authentik 身份认证</h2><div class="grid"><div><label>Issuer</label><input id="issuer" placeholder="https://login.example.com/application/o/sakura-mcp/"></div><div><label>Audience</label><input id="audience" placeholder="https://mcp.example.com"></div></div><label>Client ID（Public + PKCE）</label><input id="clientId" placeholder="Authentik OAuth Client ID"><label>JWKS URI</label><input id="jwksUri" placeholder="https://login.example.com/application/o/sakura-mcp/jwks/"><div class="grid"><div><label>Authorization URL</label><input id="authorizationUrl" placeholder="https://login.example.com/application/o/authorize/"></div><div><label>Token URL</label><input id="tokenUrl" placeholder="https://login.example.com/application/o/token/"></div></div><label>UserInfo URL（可选）</label><input id="userinfoUrl" placeholder="https://login.example.com/application/o/userinfo/"><label>Scope Claim</label><input id="scopeClaim" value="scope"><label>首位系统管理员邮箱</label><input id="adminEmail" type="email" placeholder="admin@example.com"><div class="actions"><button class="secondary" onclick="go(0)">上一步</button><button onclick="testAuthentik()">测试并继续</button></div><div id="authResult" class="result">尚未测试。</div></section>
-  <section data-step="2"><h2>AI 模型服务</h2><label>Provider</label><select id="provider" onchange="providerChanged()"><option value="none">暂不配置</option><option value="openai">OpenAI-compatible</option><option value="ollama">Ollama</option></select><div id="providerFields" class="hidden"><label>Base URL</label><input id="providerBase"><div id="apiKeyRow"><label>API Key</label><input id="providerKey" type="password" autocomplete="off"></div><div class="grid"><div><label>Chat Model</label><input id="chatModel"></div><div><label>Embedding Model</label><input id="embeddingModel"></div></div></div><div class="actions"><button class="secondary" onclick="go(1)">上一步</button><button onclick="testProviderAndContinue()">测试并继续</button></div><div id="providerResult" class="result">可跳过，之后在管理后台配置。</div></section>
-  <section data-step="3"><h2>确认安装</h2><p>将写入 Authentik、管理员白名单及可选模型配置，并永久锁定安装入口。</p><div id="summary" class="result"></div><label class="check"><input id="confirm" type="checkbox">我已保存服务器的 CONFIG_ENCRYPTION_KEY，并确认开始安装</label><div class="actions"><button class="secondary" onclick="go(2)">上一步</button><button id="installButton" onclick="completeSetup()">完成安装</button></div><div id="completeResult" class="result">等待确认。</div></section>
+  <section data-step="0" class="active"><h2>欢迎</h2><p>向导会检查数据库、配置 Authentik，并可连接 OpenAI-compatible 或 Ollama。数据库地址、安装令牌和配置加密密钥必须预先写入服务器 <code>.env</code>。</p><div class="notice">安装完成后向导将锁定。模型 API Key 使用 AES-256-GCM 加密后存入数据库，不会返回浏览器。</div><label>安装令牌（SETUP_TOKEN）</label><input id="setupToken" type="password" autocomplete="off" placeholder="可粘贴 Token 值或完整的 SETUP_TOKEN=... 行"><div class="actions"><span></span><button id="diagnoseButton" type="button">检查环境</button></div><div id="diag" class="result">正在加载页面脚本……</div></section>
+  <section data-step="1"><h2>Authentik 身份认证</h2><div class="grid"><div><label>Issuer</label><input id="issuer" placeholder="https://login.example.com/application/o/sakura-mcp/"></div><div><label>Audience</label><input id="audience" placeholder="https://mcp.example.com"></div></div><label>Client ID（Public + PKCE）</label><input id="clientId" placeholder="Authentik OAuth Client ID"><label>JWKS URI</label><input id="jwksUri" placeholder="https://login.example.com/application/o/sakura-mcp/jwks/"><div class="grid"><div><label>Authorization URL</label><input id="authorizationUrl" placeholder="https://login.example.com/application/o/authorize/"></div><div><label>Token URL</label><input id="tokenUrl" placeholder="https://login.example.com/application/o/token/"></div></div><label>UserInfo URL（可选）</label><input id="userinfoUrl" placeholder="https://login.example.com/application/o/userinfo/"><label>Scope Claim</label><input id="scopeClaim" value="scope"><label>首位系统管理员邮箱</label><input id="adminEmail" type="email" placeholder="admin@example.com"><div class="actions"><button id="authBackButton" class="secondary" type="button">上一步</button><button id="authTestButton" type="button">测试并继续</button></div><div id="authResult" class="result">尚未测试。</div></section>
+  <section data-step="2"><h2>AI 模型服务</h2><label>Provider</label><select id="provider"><option value="none">暂不配置</option><option value="openai">OpenAI-compatible</option><option value="ollama">Ollama</option></select><div id="providerFields" class="hidden"><label>Base URL</label><input id="providerBase"><div id="apiKeyRow"><label>API Key</label><input id="providerKey" type="password" autocomplete="off"></div><div class="grid"><div><label>Chat Model</label><input id="chatModel"></div><div><label>Embedding Model</label><input id="embeddingModel"></div></div></div><div class="actions"><button id="providerBackButton" class="secondary" type="button">上一步</button><button id="providerContinueButton" type="button">测试并继续</button></div><div id="providerResult" class="result">可跳过，之后在管理后台配置。</div></section>
+  <section data-step="3"><h2>确认安装</h2><p>将写入 Authentik、管理员白名单及可选模型配置，并永久锁定安装入口。</p><div id="summary" class="result"></div><label class="check"><input id="confirm" type="checkbox">我已保存服务器的 CONFIG_ENCRYPTION_KEY，并确认开始安装</label><div class="actions"><button id="installBackButton" class="secondary" type="button">上一步</button><button id="installButton" type="button">完成安装</button></div><div id="completeResult" class="result">等待确认。</div></section>
   <section data-step="4"><h2 class="ok">安装完成</h2><p>Sakura-MCP-Server 已锁定安装向导。现在可以通过 Authentik 登录管理后台，并将 Agent 连接到 MCP URL。</p><div class="result" id="finalUrls"></div></section>
-</main><script>
-let current=0;const total=5;const $=id=>document.getElementById(id);const token=()=>$('setupToken').value;
-function renderSteps(){ $('steps').innerHTML=Array.from({length:total},(_,i)=>'<div class="step '+(i<=current?'active':'')+'"></div>').join('');document.querySelectorAll('section').forEach(s=>s.classList.toggle('active',Number(s.dataset.step)===current)); }
-function go(n){current=n;renderSteps();if(n===3)buildSummary()}
-async function api(path,body){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);try{const r=await fetch('/api/setup/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Setup-Token':token()},body:body?JSON.stringify(body):undefined,signal:controller.signal});const data=await r.json().catch(()=>({error:'响应不是 JSON'}));if(!r.ok)throw new Error(data.error_description||data.error||'请求失败 '+r.status);return data}catch(e){if(e.name==='AbortError')throw new Error('检查请求超时，请检查 Nginx 到应用的代理（当前应用端口是 3001）。');throw e}finally{clearTimeout(timeout)}}
+</main><script src="/assets/setup.js" defer></script></body></html>`;
+
+export const setupScript = String.raw`'use strict';
+let current=0;
+const total=5;
+const $=id=>document.getElementById(id);
+
+function token(){
+  let value=$('setupToken').value.trim();
+  value=value.replace(/^SETUP_TOKEN\s*=\s*/, '').trim();
+  if(value.length>=2&&((value.startsWith('"')&&value.endsWith('"'))||(value.startsWith("'")&&value.endsWith("'")))) value=value.slice(1,-1);
+  return value;
+}
+function message(error){return error instanceof Error?error.message:String(error)}
+function renderSteps(){$('steps').innerHTML=Array.from({length:total},(_,i)=>'<div class="step '+(i<=current?'active':'')+'"></div>').join('');document.querySelectorAll('section').forEach(s=>s.classList.toggle('active',Number(s.dataset.step)===current))}
+function go(step){current=step;renderSteps();if(step===3)buildSummary()}
+async function api(path,body){
+  const setupToken=token();
+  if(!setupToken)throw new Error('请先输入安装令牌。');
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try{
+    const response=await fetch('/api/setup/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Setup-Token':setupToken},body:body?JSON.stringify(body):undefined,signal:controller.signal});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error('HTTP '+response.status+'：'+(data.error_description||data.error||'安装接口返回了非 JSON 错误'));
+    return data;
+  }catch(error){
+    if(error instanceof DOMException&&error.name==='AbortError')throw new Error('请求超过 15 秒，请检查 Nginx 是否代理到 127.0.0.1:3001。');
+    if(error instanceof TypeError)throw new Error('无法连接安装接口，请检查浏览器 Console、HTTPS 和反向代理配置。');
+    throw error;
+  }finally{clearTimeout(timeout)}
+}
 function authData(){return{issuer:$('issuer').value,audience:$('audience').value,jwksUri:$('jwksUri').value,scopeClaim:$('scopeClaim').value,clientId:$('clientId').value,authorizationUrl:$('authorizationUrl').value,tokenUrl:$('tokenUrl').value,userinfoUrl:$('userinfoUrl').value||undefined}}
-function providerData(){const p=$('provider').value;if(p==='none')return{};const data={baseUrl:$('providerBase').value,chatModel:$('chatModel').value||undefined,embeddingModel:$('embeddingModel').value||undefined};return p==='openai'?{openaiCompatible:{...data,apiKey:$('providerKey').value||undefined}}:{ollama:data}}
-async function diagnose(){$('diag').className='result';$('diag').textContent='检查中，请稍候……';try{const d=await api('diagnostics');if(!d.pgvectorVersion)throw new Error('pgvector 扩展未安装');$('diag').className='result ok';$('diag').textContent='✓ PostgreSQL 正常\n✓ pgvector '+d.pgvectorVersion+'\n✓ 已应用迁移：'+d.migrations.map(x=>x.name).join(', ');go(1)}catch(e){$('diag').className='result bad';$('diag').textContent='✗ '+e.message}}
-async function testAuthentik(){try{const d=await api('test-authentik',{authentik:authData()});$('authResult').className='result ok';$('authResult').textContent='✓ Authentik 连接成功\n签名密钥：'+d.signingKeys;go(2)}catch(e){$('authResult').className='result bad';$('authResult').textContent='✗ '+e.message}}
-function providerChanged(){const p=$('provider').value;$('providerFields').classList.toggle('hidden',p==='none');$('apiKeyRow').classList.toggle('hidden',p!=='openai');$('providerBase').value=p==='ollama'?'http://host.docker.internal:11434':p==='openai'?'https://api.openai.com/v1':''}
-async function testProviderAndContinue(){if($('provider').value==='none'){go(3);return}try{const d=await api('test-provider',providerData());$('providerResult').className='result ok';$('providerResult').textContent='✓ '+d.provider+' 连接成功';go(3)}catch(e){$('providerResult').className='result bad';$('providerResult').textContent='✗ '+e.message}}
+function providerData(){const provider=$('provider').value;if(provider==='none')return{};const data={baseUrl:$('providerBase').value,chatModel:$('chatModel').value||undefined,embeddingModel:$('embeddingModel').value||undefined};return provider==='openai'?{openaiCompatible:{...data,apiKey:$('providerKey').value||undefined}}:{ollama:data}}
+async function diagnose(){
+  const button=$('diagnoseButton');button.disabled=true;$('diag').className='result';$('diag').textContent='检查中，请稍候……';
+  try{const data=await api('diagnostics');if(!data.pgvectorVersion)throw new Error('pgvector 扩展未安装');$('diag').className='result ok';$('diag').textContent='✓ PostgreSQL 正常\n✓ pgvector '+data.pgvectorVersion+'\n✓ 已应用迁移：'+data.migrations.map(item=>item.name).join(', ');go(1)}
+  catch(error){$('diag').className='result bad';$('diag').textContent='✗ '+message(error)}finally{button.disabled=false}
+}
+async function testAuthentik(){const button=$('authTestButton');button.disabled=true;try{const data=await api('test-authentik',{authentik:authData()});$('authResult').className='result ok';$('authResult').textContent='✓ Authentik 连接成功\n签名密钥：'+data.signingKeys;go(2)}catch(error){$('authResult').className='result bad';$('authResult').textContent='✗ '+message(error)}finally{button.disabled=false}}
+function providerChanged(){const provider=$('provider').value;$('providerFields').classList.toggle('hidden',provider==='none');$('apiKeyRow').classList.toggle('hidden',provider!=='openai');$('providerBase').value=provider==='ollama'?'http://host.docker.internal:11434':provider==='openai'?'https://api.openai.com/v1':''}
+async function testProviderAndContinue(){if($('provider').value==='none'){go(3);return}const button=$('providerContinueButton');button.disabled=true;try{const data=await api('test-provider',providerData());$('providerResult').className='result ok';$('providerResult').textContent='✓ '+data.provider+' 连接成功';go(3)}catch(error){$('providerResult').className='result bad';$('providerResult').textContent='✗ '+message(error)}finally{button.disabled=false}}
 function buildSummary(){$('summary').textContent='管理员：'+$('adminEmail').value+'\nAuthentik：'+$('issuer').value+'\nAudience：'+$('audience').value+'\nAI Provider：'+$('provider').value}
-async function completeSetup(){if(!$('confirm').checked){$('completeResult').className='result bad';$('completeResult').textContent='请先确认配置加密密钥已安全保存。';return}const b=$('installButton');b.disabled=true;try{await api('complete',{administratorEmail:$('adminEmail').value,authentik:authData(),...providerData()});$('completeResult').className='result ok';$('completeResult').textContent='✓ 安装成功';$('finalUrls').textContent='MCP URL：'+location.origin+'/mcp\n健康检查：'+location.origin+'/health';go(4)}catch(e){b.disabled=false;$('completeResult').className='result bad';$('completeResult').textContent='✗ '+e.message}}
-fetch('/api/setup/status').then(r=>r.json()).then(s=>{if(s.completed){current=4;$('finalUrls').textContent='系统已经完成安装。\nMCP URL：'+location.origin+'/mcp'}renderSteps()}).catch(()=>renderSteps());
-</script></body></html>`;
+async function completeSetup(){if(!$('confirm').checked){$('completeResult').className='result bad';$('completeResult').textContent='请先确认配置加密密钥已安全保存。';return}const button=$('installButton');button.disabled=true;try{await api('complete',{administratorEmail:$('adminEmail').value,authentik:authData(),...providerData()});$('completeResult').className='result ok';$('completeResult').textContent='✓ 安装成功';$('finalUrls').textContent='MCP URL：'+location.origin+'/mcp\n健康检查：'+location.origin+'/health';go(4)}catch(error){button.disabled=false;$('completeResult').className='result bad';$('completeResult').textContent='✗ '+message(error)}}
+
+$('diagnoseButton').addEventListener('click',diagnose);
+$('setupToken').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void diagnose()}});
+$('authBackButton').addEventListener('click',()=>go(0));
+$('authTestButton').addEventListener('click',testAuthentik);
+$('provider').addEventListener('change',providerChanged);
+$('providerBackButton').addEventListener('click',()=>go(1));
+$('providerContinueButton').addEventListener('click',testProviderAndContinue);
+$('installBackButton').addEventListener('click',()=>go(2));
+$('installButton').addEventListener('click',completeSetup);
+renderSteps();
+$('diag').textContent='页面脚本已加载，请输入令牌后点击“检查环境”。';
+fetch('/api/setup/status').then(async response=>{if(!response.ok)throw new Error('HTTP '+response.status);return response.json()}).then(status=>{if(status.completed){current=4;$('finalUrls').textContent='系统已经完成安装。\nMCP URL：'+location.origin+'/mcp'}renderSteps()}).catch(error=>{$('diag').className='result bad';$('diag').textContent='安装状态接口不可用：'+message(error)+'。请检查 Nginx 代理。'});
+`;

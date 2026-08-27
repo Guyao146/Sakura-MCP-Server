@@ -76,6 +76,15 @@ describe('memory database schema', () => {
     expect(compose).not.toMatch(/(?<!\$)\$(?:value|1)\b/);
   });
 
+  it('proxies every setup resource with the public host and token header', async () => {
+    const nginx = await readFile(new URL('../nginx-mcp.conf.example', import.meta.url), 'utf8');
+    expect(nginx).toContain('proxy_set_header Host $host;');
+    expect(nginx).toContain('proxy_set_header X-Setup-Token $http_x_setup_token;');
+    expect(nginx).toContain('location = /assets/setup.js');
+    expect(nginx).toContain('location ^~ /api/setup/');
+    expect(nginx).toContain('proxy_pass http://127.0.0.1:3001;');
+  });
+
   it('indexes security audit actions and request correlation', async () => {
     const sql = await readFile(new URL('../migrations/007_audit_security.sql', import.meta.url), 'utf8');
     expect(sql).toContain('auth_source text');

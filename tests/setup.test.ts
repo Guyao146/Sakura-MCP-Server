@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { Script } from 'node:vm';
 import { ConfigCipher } from '../src/settings/crypto.js';
 import { SetupService } from '../src/setup/service.js';
 import { loadConfig } from '../src/config.js';
+import { setupPage, setupScript } from '../src/setup/page.js';
 
 const key = Buffer.alloc(32, 7).toString('base64url');
 const config = loadConfig({
@@ -28,5 +30,13 @@ describe('installation security', () => {
     expect(service.verifyToken('t'.repeat(32))).toBe(true);
     expect(service.verifyToken('x'.repeat(32))).toBe(false);
     expect(service.verifyToken('short')).toBe(false);
+  });
+
+  it('loads a CSP-compatible setup script with event listeners', () => {
+    expect(setupPage).toContain('<script src="/assets/setup.js" defer></script>');
+    expect(setupPage).not.toMatch(/\son(?:click|change)=/);
+    expect(setupScript).toContain("$('diagnoseButton').addEventListener('click',diagnose)");
+    expect(setupScript).toContain("'HTTP '+response.status");
+    expect(() => new Script(setupScript)).not.toThrow();
   });
 });

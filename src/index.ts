@@ -17,7 +17,7 @@ import { MemoryTransferService } from './transfer/service.js';
 import { JobRepository } from './jobs/repository.js';
 import { BackgroundWorker } from './jobs/worker.js';
 import { createServer } from './tools.js';
-import { setupPage } from './setup/page.js';
+import { setupPage, setupScript } from './setup/page.js';
 import { SetupService, setupInputSchema } from './setup/service.js';
 import { SettingsRepository } from './settings/repository.js';
 import { WebSessionService } from './web/session.js';
@@ -70,6 +70,9 @@ const setupGuard = async (context: Context, next: Next) => {
 };
 
 app.get('/setup', context => context.html(setupPage));
+app.get('/assets/setup.js', context => context.body(setupScript, 200, {
+  'Content-Type': 'application/javascript; charset=UTF-8', 'Cache-Control': 'no-store'
+}));
 app.get('/api/setup/status', async context => context.json(await settings.installation()));
 app.use('/api/setup/*', setupGuard);
 app.get('/api/setup/diagnostics', async context => context.json(await setup.diagnostics()));

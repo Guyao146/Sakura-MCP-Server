@@ -2,6 +2,14 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.12] - 2026-08-26
+
+### Fixed
+
+- Preserve the public `Host`, forwarded protocol and client address for every Nginx upstream route so application host validation does not reject setup requests.
+- Serve the setup wizard JavaScript as a same-origin external resource and bind actions with event listeners, keeping the wizard functional when 宝塔/Nginx applies a strict Content Security Policy.
+- Accept either a raw setup token or a pasted `SETUP_TOKEN=...` line and show explicit loading, timeout, network and HTTP status feedback.
+
 ## [0.2.11] - 2026-08-26
 
 ### Fixed
