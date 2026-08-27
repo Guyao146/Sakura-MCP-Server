@@ -2,6 +2,12 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.21] - 2026-08-27
+
+### Fixed
+
+- Align setup-page localization assertions with the current Issuer and Audience labels so CI and automated Release packaging complete successfully.
+
 ## [0.2.20] - 2026-08-27
 
 ### Added
