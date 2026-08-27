@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.14] - 2026-08-27
+
+### Fixed
+
+- Do not send `Content-Type: application/json` on GET or bodyless management requests. The MCP/Hono request parser otherwise rejected them with `HTTP 400 Invalid JSON` before the route handler ran.
+- Surface bounded plain-text upstream errors in the setup wizard and management dashboard instead of replacing them with a generic non-JSON message.
+
 ## [0.2.13] - 2026-08-27
 
 ### Changed

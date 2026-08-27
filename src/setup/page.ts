@@ -28,9 +28,9 @@ async function api(path,body){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),15000);
   try{
-    const response=await fetch('/api/setup/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:controller.signal});
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error('HTTP '+response.status+'：'+(data.error_description||data.error||'安装接口返回了非 JSON 错误'));
+    const response=await fetch('/api/setup/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,signal:controller.signal});
+    const raw=await response.text();let data={};try{data=raw?JSON.parse(raw):{}}catch{}
+    if(!response.ok)throw new Error('HTTP '+response.status+'：'+(data.error_description||data.error||raw.slice(0,500)||'安装接口返回了空错误响应'));
     return data;
   }catch(error){
     if(error instanceof DOMException&&error.name==='AbortError')throw new Error('请求超过 15 秒，请检查 Nginx 是否代理到 127.0.0.1:3001。');

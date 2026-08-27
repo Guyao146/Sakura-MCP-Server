@@ -41,6 +41,11 @@ describe('Web management security', () => {
     }
   });
 
+  it('only declares JSON content for requests that have a body', () => {
+    expect(adminPage).toContain("if(opt.body!==undefined)headers['Content-Type']='application/json'");
+    expect(adminPage).toContain('raw.slice(0,500)');
+  });
+
   it('contains syntactically valid browser JavaScript', () => {
     const script = adminPage.match(/<script>([\s\S]*)<\/script>/)?.[1];
     expect(script).toBeTruthy();

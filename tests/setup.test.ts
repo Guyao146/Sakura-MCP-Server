@@ -23,6 +23,8 @@ describe('installation security', () => {
     expect(setupPage).not.toMatch(/\son(?:click|change)=/);
     expect(setupPage).not.toContain('setupToken');
     expect(setupScript).not.toContain('X-Setup-Token');
+    expect(setupScript).toContain("headers:body?{'Content-Type':'application/json'}:undefined");
+    expect(setupScript).toContain('raw.slice(0,500)');
     expect(setupScript).toContain("$('diagnoseButton').addEventListener('click',diagnose)");
     expect(setupScript).toContain('else{void diagnose()}');
     expect(setupScript).toContain("'HTTP '+response.status");
