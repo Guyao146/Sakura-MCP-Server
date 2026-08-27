@@ -24,6 +24,7 @@ import { WebSessionService } from './web/session.js';
 import type { WebIdentity } from './web/session.js';
 import { adminPage } from './web/admin-page.js';
 import { RateLimiter, securityHeaders } from './security/http.js';
+import { APP_VERSION, UpdateChecker } from './version.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
@@ -36,7 +37,8 @@ const audit = new AuditLogger(baseConfig.auditLogPath, database);
 const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
 let config = await settings.apply(baseConfig);
 let auth = new AuthService(config, database);
-const setup = new SetupService(baseConfig, database, settings);
+const setup = new SetupService(database, settings);
+const updateChecker = new UpdateChecker();
 const webSessions = new WebSessionService(database, () => config);
 const memories = new MemoryRepository(database);
 const spaces = new SpaceRepository(database);
@@ -65,10 +67,10 @@ app.onError((error, context) => {
 const setupGuard = async (context: Context, next: Next) => {
   const installation = await settings.installation();
   if (installation.completed) return context.json({ error: 'setup_locked', error_description: 'Sakura-MCP-Server is already installed.' }, 410);
-  if (!setup.verifyToken(context.req.header('x-setup-token'))) return context.json({ error: 'unauthorized', error_description: 'Invalid setup token.' }, 401);
   await next();
 };
 
+app.get('/', async context => context.redirect((await settings.installation()).completed ? '/admin' : '/setup'));
 app.get('/setup', context => context.html(setupPage));
 app.get('/assets/setup.js', context => context.body(setupScript, 200, {
   'Content-Type': 'application/javascript; charset=UTF-8', 'Cache-Control': 'no-store'
@@ -94,10 +96,10 @@ app.post('/api/setup/complete', async context => {
     await setup.complete(body);
     config = await settings.apply(baseConfig);
     auth = new AuthService(config, database);
-    await audit.record({ action: 'system.install', authSource: 'setup_token', result: 'success', metadata: { administratorEmail: body.administratorEmail } });
+    await audit.record({ action: 'system.install', authSource: 'first_run_setup', result: 'success', metadata: { administratorEmail: body.administratorEmail } });
     return context.json({ completed: true });
   } catch (error) {
-    await audit.record({ action: 'system.install', authSource: 'setup_token', result: 'error', metadata: { message: error instanceof Error ? error.message : 'Setup failed.' } });
+    await audit.record({ action: 'system.install', authSource: 'first_run_setup', result: 'error', metadata: { message: error instanceof Error ? error.message : 'Setup failed.' } });
     return context.json({ error: 'setup_failed', error_description: error instanceof Error ? error.message : 'Setup failed.' }, 400);
   }
 });
@@ -144,6 +146,7 @@ app.get('/api/me', async context => {
   } catch (error) { return context.json({ error: 'unauthorized', error_description: error instanceof Error ? error.message : 'Unauthorized.' }, 401); }
 });
 app.get('/admin', async context => {
+  if (!(await settings.installation()).completed) return context.redirect('/setup');
   try {
     await adminIdentity(context);
     return context.html(adminPage);
@@ -162,9 +165,14 @@ const agentScopeSchema = z.array(z.enum([
 
 app.get('/api/admin/bootstrap', async context => adminApi(context, false, async identity => ({
   csrf: webSessions.csrf(identity),
+  version: APP_VERSION,
   me: { id: identity.userId, email: identity.email, displayName: identity.displayName, isSystemAdmin: identity.isSystemAdmin },
   spaces: await spaces.list(identity.userId), agents: await agents.list(identity.userId)
 })));
+app.get('/api/admin/version', async context => adminApi(context, false, async identity => {
+  if (!identity.isSystemAdmin) throw new Error('System administrator permission is required.');
+  return updateChecker.check(context.req.query('force') === 'true');
+}));
 app.get('/api/admin/spaces', async context => adminApi(context, false, identity => spaces.list(identity.userId)));
 app.post('/api/admin/spaces', async context => adminApi(context, true, async identity => {
   const body = z.object({ name: z.string().min(1).max(120), description: z.string().max(2000).default('') }).parse(await context.req.json());
@@ -301,12 +309,12 @@ app.get('/health', async context => {
          count(*) FILTER(WHERE status='processing')::text AS processing,
          count(*) FILTER(WHERE status='failed')::text AS failed FROM ingestion_jobs`)
     ]);
-    return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: '0.2.2',
+    return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: APP_VERSION,
       database: 'ok', pgvector: vector.rows[0]?.version ?? 'missing', installed: installation.completed,
       worker: { enabled: baseConfig.worker.enabled, pending: Number(queue.rows[0].pending),
         processing: Number(queue.rows[0].processing), failed: Number(queue.rows[0].failed) } });
   } catch {
-    return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: '0.2.2', database: 'unavailable' }, 503);
+    return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: APP_VERSION, database: 'unavailable' }, 503);
   }
 });
 app.get('/.well-known/oauth-protected-resource/mcp', context => {

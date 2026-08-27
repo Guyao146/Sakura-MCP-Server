@@ -5,7 +5,7 @@ Version 0.2.x changes Sakura-MCP-Server into a PostgreSQL-backed multi-user AI m
 ## Before upgrading
 
 1. Back up the current `.env` and reverse-proxy configuration.
-2. Generate and securely back up independent `SETUP_TOKEN` and `CONFIG_ENCRYPTION_KEY` values.
+2. Generate and securely back up a permanent `CONFIG_ENCRYPTION_KEY` value.
 3. Provision PostgreSQL 16 with the pgvector extension, or use the included Compose service.
 4. Configure an Authentik Public OAuth client with Authorization Code + PKCE.
 5. Register the exact redirect URI: `https://mcp.example.com/auth/callback`.
@@ -25,9 +25,9 @@ docker compose logs -f sakura-mcp
 
 Windows Docker Desktop 用户可以运行 `scripts/install.ps1`；PowerShell 执行策略受限时，先执行 `Set-ExecutionPolicy -Scope Process Bypass`。生产模式会拉取 GHCR 镜像，只有显式传入 `-LocalBuild` 才会本地构建。
 
-生产 `docker-compose.yml` 默认拉取 `ghcr.io/guyao146/sakura-mcp-server:0.2.12`，宿主机默认使用 3001、容器内部使用 3000，不会和 LibreChat 的 3000 冲突。不需要服务器保存源码或安装 Node.js，也不要求预先创建 `.env`。Compose 会由一次性 `bootstrap-secrets` 容器生成持久化运行密钥。源码开发/本地构建请额外使用 `docker-compose.dev.yml`。
+生产 `docker-compose.yml` 默认拉取 `ghcr.io/guyao146/sakura-mcp-server:0.2.13`，宿主机默认使用 3001、容器内部使用 3000，不会和 LibreChat 的 3000 冲突。不需要服务器保存源码或安装 Node.js，也不要求预先创建 `.env`。Compose 会由一次性 `bootstrap-secrets` 容器生成持久化运行密钥。源码开发/本地构建请额外使用 `docker-compose.dev.yml`。
 
-首次启动后，可用 `docker compose run --rm --no-deps --entrypoint sh bootstrap-secrets -c 'cat /secrets/app.env'` 在安全终端读取 `SETUP_TOKEN`，然后访问 `/setup`；请长期备份 `CONFIG_ENCRYPTION_KEY`。
+首次启动后直接访问 `/setup`，无需安装 Token。页面会自动检查运行环境；安装完成前建议在反向代理中临时限制 `/setup` 和 `/api/setup/` 的来源 IP。请长期备份 `CONFIG_ENCRYPTION_KEY`。从旧版本升级时无需删除 `runtime-secrets`；其中残留的旧 `SETUP_TOKEN` 会被忽略。
 
 With `AUTO_MIGRATE=true`, migrations run in filename order at startup. Do not delete entries from `schema_migrations`.
 
@@ -41,7 +41,7 @@ curl -I https://mcp.example.com/admin
 docker compose ps
 ```
 
-Verify `.env` is mode `600`, port 3000 is bound only to `127.0.0.1`, PostgreSQL is not published, and HTTPS is mandatory.
+Verify `.env` is mode `600`, host port 3001 is bound only to `127.0.0.1`, PostgreSQL is not published, and HTTPS is mandatory.
 
 ## Rollback
 

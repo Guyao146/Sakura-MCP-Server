@@ -297,7 +297,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 1. 检查 Docker 和 Compose v2；
 2. 拒绝覆盖已有 `.env`；
-3. 生成随机数据库密码、`SETUP_TOKEN`、`CONFIG_ENCRYPTION_KEY` 和 bootstrap API Key；
+3. 生成随机数据库密码、`CONFIG_ENCRYPTION_KEY` 和 bootstrap API Key；
 4. 创建权限为 `600` 的 `.env` 和 `700` 的 `data/`；
 5. 拉取 GHCR 镜像并执行 `docker compose up -d`；
 6. 输出安装向导和健康检查地址。
@@ -312,7 +312,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 cd Sakura-MCP-Server
 # Compose 不会自动读取 .env.example，必须先创建 .env
 cp .env.example .env
-# 修改数据库密码、PUBLIC_BASE_URL，并生成 SETUP_TOKEN 和 CONFIG_ENCRYPTION_KEY
+# 修改数据库密码、PUBLIC_BASE_URL，并生成 CONFIG_ENCRYPTION_KEY
 chmod 600 .env
 docker compose pull
 docker compose up -d
@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.12
+ghcr.io/guyao146/sakura-mcp-server:0.2.13
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +351,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.12
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.13
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -374,48 +374,38 @@ Compose 默认：
 docker compose up -d
 ```
 
-注意：Docker Desktop/Portainer 的项目变量中如果填写了旧的 `POSTGRES_PASSWORD`、`SETUP_TOKEN` 或 `MCP_API_KEYS`，它们只会用于首次创建 `runtime-secrets`；已有 secret 卷不会被覆盖。重新初始化前必须先备份并删除该 Compose 项目的 `runtime-secrets` 卷。
+注意：Docker Desktop/Portainer 的项目变量中如果填写了旧的 `POSTGRES_PASSWORD` 或 `MCP_API_KEYS`，它们只会用于首次创建 `runtime-secrets`；已有 secret 卷不会被覆盖。升级前不要删除该 Compose 项目的 `runtime-secrets` 卷。旧版本卷中即使仍有 `SETUP_TOKEN`，新版也会忽略它。
 
 Compose 会先启动一次性 `bootstrap-secrets` 容器，自动生成并保存：
 
 ```text
 PostgreSQL 密码
-SETUP_TOKEN
 CONFIG_ENCRYPTION_KEY
 bootstrap Agent Key
 ```
 
 生成的密钥只保存在 Docker 命名卷 `runtime-secrets`，应用以只读方式挂载。这样 Docker Desktop、Portainer 或直接上传 Compose 文件时不会再因为缺少 `POSTGRES_PASSWORD` 而创建失败。
 
-首次启动后需要从 secret 卷读取 `SETUP_TOKEN` 才能打开安装向导。请在服务器上执行以下命令，并只在安全终端查看输出：
-
-```bash
-docker compose run --rm --no-deps --entrypoint sh bootstrap-secrets -c 'cat /secrets/app.env'
-```
-
-输出中的 `SETUP_TOKEN` 只用于第一次安装，`CONFIG_ENCRYPTION_KEY` 必须长期备份。不要把输出复制到聊天、工单或 Git。
+首次启动后直接访问 `/setup`，页面会自动检查 PostgreSQL、pgvector 和迁移，无需读取或输入安装 Token。安装完成前，任何能访问 `/setup` 的人都可以发起首次安装；建议在宝塔/Nginx 中临时限制为管理员 IP，并尽快完成安装。安装完成后 Setup API 永久返回 `410 setup_locked`。
 
 如果要设置域名、Provider 或其他非密钥配置，可以在 Compose 项目环境变量中填写，或者在同目录创建 `.env`。`.env` 中提供的密钥只会在第一次初始化 secret 卷时使用；已有 secret 卷不会被覆盖。
 
 查看安装向导地址：
 
 ```text
-http://localhost:3000/setup
+http://localhost:3001/setup
 ```
 
 生产环境仍建议先配置 HTTPS Nginx，然后访问 `https://你的域名/setup`。
 
-生成安装密钥：
+手工生成配置加密密钥：
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-请运行两次，分别填写：
-
 ```dotenv
-SETUP_TOKEN=<第一次生成的值>
-CONFIG_ENCRYPTION_KEY=<第二次生成的值>
+CONFIG_ENCRYPTION_KEY=<生成的值>
 ```
 
 `CONFIG_ENCRYPTION_KEY` 是长期主密钥，必须离线备份。丢失后，数据库中已加密的模型 API Key 无法恢复。
@@ -430,7 +420,7 @@ https://mcp.example.com/setup
 
 首次启动的中文 Web 安装向导包含四个步骤：
 
-1. 输入服务器 `.env` 中的 `SETUP_TOKEN`，检查 PostgreSQL、pgvector 与迁移；
+1. 页面自动检查 PostgreSQL、pgvector 与迁移；
 2. 配置并测试 Authentik Issuer、Audience、JWKS 和首位管理员邮箱；
 3. 可选配置并测试 OpenAI-compatible 或 Ollama；
 4. 确认配置加密密钥已备份，完成安装并锁定向导。
@@ -438,7 +428,8 @@ https://mcp.example.com/setup
 安装完成前：
 
 - `/setup` 可打开安装页面；
-- Setup 写接口必须携带 `X-Setup-Token`；
+- Setup API 无需安装 Token，但仍受独立频率限制；
+- 建议在反向代理中临时限制 `/setup` 和 `/api/setup/` 的来源 IP，直到安装完成；
 - `/mcp` 返回 `503 setup_required`，不会在未配置身份系统时对外提供记忆能力。
 
 安装完成后：
@@ -446,7 +437,7 @@ https://mcp.example.com/setup
 - Setup 配置接口永久返回 `410 setup_locked`；
 - Authentik 和 Provider 配置从数据库加载；
 - OpenAI-compatible API Key 使用 AES-256-GCM 加密存储；
-- 安装令牌不能用于重新开启向导。
+- 浏览器和 API 均不能重新开启安装向导。
 
 Authentik Provider 应使用 Public Client + Authorization Code + PKCE，并注册精确回调地址：
 
@@ -477,7 +468,8 @@ https://mcp.example.com/admin
 - 创建只显示一次的 Agent Key；
 - 查看 Agent scope、前缀、到期、使用和撤销状态；
 - 为 Agent 配置空间级 scopes；
-- 立即撤销 Agent Key。
+- 立即撤销 Agent Key；
+- 显示当前运行版本，并由系统管理员检查 GitHub 最新 Release。
 
 所有管理 API 都从 HttpOnly Session 解析内部用户身份，不接受客户端传入 `user_id`。写请求还必须提供与 Session ID 绑定的 HMAC-SHA256 CSRF Token；页面中的服务端数据使用 DOM `textContent` 渲染，不将用户内容拼接进 HTML。
 
@@ -542,7 +534,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.2`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.13`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 

@@ -13,6 +13,7 @@ import { SemanticMemoryService } from './semantic/service.js';
 import { MemoryGovernanceService } from './governance/service.js';
 import { MemoryTransferService } from './transfer/service.js';
 import { JobRepository } from './jobs/repository.js';
+import { APP_VERSION } from './version.js';
 
 const memoryType = z.enum(['fact', 'preference', 'event', 'task', 'person', 'project', 'summary', 'document', 'idea', 'other']);
 const text = (value: unknown) => ({
@@ -22,7 +23,7 @@ const text = (value: unknown) => ({
 const failure = (message: string) => ({ content: [{ type: 'text' as const, text: message }], isError: true });
 
 export function createServer(database: Database, principal: Principal, audit: AuditLogger, getConfig: () => AppConfig): McpServer {
-  const server = new McpServer({ name: 'Sakura-MCP-Server', version: '0.2.2' });
+  const server = new McpServer({ name: 'Sakura-MCP-Server', version: APP_VERSION });
   const repository = new MemoryRepository(database);
   const semantic = new SemanticMemoryService(database, getConfig);
   const governance = new MemoryGovernanceService(database);

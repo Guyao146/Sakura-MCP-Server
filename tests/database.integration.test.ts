@@ -14,6 +14,7 @@ import { MemoryTransferService } from '../src/transfer/service.js';
 import { JobRepository } from '../src/jobs/repository.js';
 import { BackgroundWorker } from '../src/jobs/worker.js';
 import { AuditLogger } from '../src/audit.js';
+import { APP_VERSION } from '../src/version.js';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -48,7 +49,9 @@ describeDatabase('PostgreSQL installation integration', () => {
       openaiCompatible: { baseUrl: 'https://api.example.com/v1', apiKey: 'provider-secret', chatModel: 'chat', embeddingModel: 'embed' },
       ollama: { baseUrl: 'http://ollama:11434', chatModel: 'local-chat', embeddingModel: 'local-embed' }
     });
-    await expect(settings.installation()).resolves.toMatchObject({ completed: true, administrator_email: 'owner@example.com' });
+    await expect(settings.installation()).resolves.toMatchObject({
+      completed: true, installed_version: APP_VERSION, administrator_email: 'owner@example.com'
+    });
     await expect(settings.get<{ apiKey: string }>('provider.openai_compatible')).resolves.toMatchObject({ apiKey: 'provider-secret' });
     const raw = await database.query<{ value: unknown }>("SELECT value FROM system_settings WHERE key='provider.openai_compatible'");
     expect(JSON.stringify(raw.rows[0].value)).not.toContain('provider-secret');
@@ -74,7 +77,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     expect(raw.rows[0].secret_hash).not.toContain(created.token);
 
     const authConfig = loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'z'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
     });
     const principal = await new AuthService(authConfig, database).authenticate(`Bearer ${created.token}`);
@@ -96,7 +99,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     const tokenHash = (await import('node:crypto')).createHash('sha256').update(token).digest('hex');
     await database.query(`INSERT INTO web_sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '1 hour')`, [identity.userId, tokenHash]);
     const service = new WebSessionService(database, () => loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'w'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
     }));
     await expect(service.authenticate(token)).resolves.toMatchObject({ userId: identity.userId, email: 'web@example.com' });
@@ -128,7 +131,7 @@ describeDatabase('PostgreSQL installation integration', () => {
 
   it('embeds memories and performs pgvector hybrid recall', async () => {
     const config = loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'v'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: '', OLLAMA_BASE_URL: 'http://ollama.test',
       OLLAMA_CHAT_MODEL: 'chat-test', OLLAMA_EMBEDDING_MODEL: 'embed-test'
     });
@@ -159,7 +162,7 @@ describeDatabase('PostgreSQL installation integration', () => {
 
   it('keeps raw memory when embedding fails', async () => {
     const config = loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'f'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: '', OLLAMA_BASE_URL: 'http://ollama.failure',
       OLLAMA_EMBEDDING_MODEL: 'broken-model'
     });
@@ -213,7 +216,7 @@ describeDatabase('PostgreSQL installation integration', () => {
 
   it('round-trips portable JSON and Markdown with tracked partial failures', async () => {
     const config = loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'i'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
     });
     const repository = new MemoryRepository(database);
@@ -244,7 +247,7 @@ describeDatabase('PostgreSQL installation integration', () => {
 
   it('claims jobs once and rebuilds embeddings through the persistent worker', async () => {
     const config = loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'q'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: '', OLLAMA_BASE_URL: 'http://worker-ollama.test',
       OLLAMA_EMBEDDING_MODEL: 'worker-embed'
     });
@@ -315,7 +318,7 @@ describeDatabase('PostgreSQL installation integration', () => {
 
   it('blocks cross-tenant memory, job, Agent and export access', async () => {
     const config = loadConfig({
-      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!, SETUP_TOKEN: 'x'.repeat(32),
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: connectionString!,
       CONFIG_ENCRYPTION_KEY: encryptionKey, MCP_API_KEYS: ''
     });
     const memories = new MemoryRepository(database);

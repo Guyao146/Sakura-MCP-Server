@@ -8,7 +8,7 @@ if [ ! -r "$secret_file" ]; then
 fi
 
 . "$secret_file"
-export POSTGRES_PASSWORD SETUP_TOKEN CONFIG_ENCRYPTION_KEY MCP_API_KEYS
+export POSTGRES_PASSWORD CONFIG_ENCRYPTION_KEY MCP_API_KEYS
 export POSTGRES_HOST="${POSTGRES_HOST:-postgres}"
 export DATABASE_URL="postgresql://sakura:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/sakura_memory"
 

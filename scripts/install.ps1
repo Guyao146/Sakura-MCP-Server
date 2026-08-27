@@ -43,7 +43,6 @@ function Set-EnvLine([string[]]$Lines, [string]$Name, [string]$Value) {
 }
 
 $databasePassword = New-Base64UrlSecret 48
-$setupToken = New-Base64UrlSecret 48
 $encryptionKey = New-Base64UrlSecret 32
 $bootstrapSecret = New-Base64UrlSecret 48
 
@@ -52,7 +51,6 @@ $lines = Get-Content '.\.env'
 $lines = Set-EnvLine $lines 'PUBLIC_BASE_URL' $PublicUrl
 $lines = Set-EnvLine $lines 'POSTGRES_PASSWORD' $databasePassword
 $lines = Set-EnvLine $lines 'DATABASE_URL' "postgresql://sakura:$databasePassword@postgres:5432/sakura_memory"
-$lines = Set-EnvLine $lines 'SETUP_TOKEN' $setupToken
 $lines = Set-EnvLine $lines 'CONFIG_ENCRYPTION_KEY' $encryptionKey
 $scopes = 'memory:read|memory:write|memory:update|memory:delete|memory:export|space:create|space:manage|member:manage|agent:manage|admin:system'
 $lines = Set-EnvLine $lines 'MCP_API_KEYS' "bootstrap-admin:${bootstrapSecret}:$scopes"

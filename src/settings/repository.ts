@@ -1,6 +1,7 @@
 import type { AppConfig } from '../config.js';
 import type { Database } from '../database.js';
 import { ConfigCipher } from './crypto.js';
+import { APP_VERSION } from '../version.js';
 
 export interface InstallationState {
   completed: boolean; completed_at: string | null; installed_version: string | null; administrator_email: string | null;
@@ -62,8 +63,8 @@ export class SettingsRepository {
       if (input.ollama) await put('provider.ollama', input.ollama, false);
       await client.query('INSERT INTO system_admin_allowlist(email) VALUES(lower($1)) ON CONFLICT(email) DO NOTHING', [input.administratorEmail]);
       await client.query(
-        `UPDATE installation_state SET completed=true,completed_at=now(),installed_version='0.2.2',administrator_email=lower($1),updated_at=now()
-         WHERE singleton=true`, [input.administratorEmail]);
+        `UPDATE installation_state SET completed=true,completed_at=now(),installed_version=$1,administrator_email=lower($2),updated_at=now()
+         WHERE singleton=true`, [APP_VERSION, input.administratorEmail]);
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }

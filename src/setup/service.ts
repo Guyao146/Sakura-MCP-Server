@@ -1,6 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import type { AppConfig } from '../config.js';
 import type { Database } from '../database.js';
 import { OllamaProvider } from '../providers/ollama.js';
 import { OpenAICompatibleProvider } from '../providers/openai-compatible.js';
@@ -18,13 +16,7 @@ export const setupInputSchema = z.object({
 export type SetupInput = z.infer<typeof setupInputSchema>;
 
 export class SetupService {
-  constructor(private readonly config: AppConfig, private readonly database: Database, private readonly settings: SettingsRepository) {}
-
-  verifyToken(candidate: string | undefined): boolean {
-    if (!candidate) return false;
-    const expected = Buffer.from(this.config.setup.token); const actual = Buffer.from(candidate);
-    return expected.length === actual.length && timingSafeEqual(expected, actual);
-  }
+  constructor(private readonly database: Database, private readonly settings: SettingsRepository) {}
 
   async diagnostics() {
     const version = await this.database.query<{ version: string }>('SELECT version()');

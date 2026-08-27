@@ -6,7 +6,7 @@ import { WebSessionService, type WebIdentity } from '../src/web/session.js';
 
 const config = loadConfig({
   PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: 'postgresql://localhost/test',
-  SETUP_TOKEN: 'a'.repeat(32), CONFIG_ENCRYPTION_KEY: Buffer.alloc(32, 15).toString('base64url'), MCP_API_KEYS: ''
+  CONFIG_ENCRYPTION_KEY: Buffer.alloc(32, 15).toString('base64url'), MCP_API_KEYS: ''
 });
 const identity: WebIdentity = {
   sessionId: '10000000-0000-4000-8000-000000000001', userId: '20000000-0000-4000-8000-000000000002',
@@ -31,6 +31,12 @@ describe('Web management security', () => {
 
   it('includes management views for spaces, memories, Agents and members', () => {
     for (const marker of ['记忆空间', '记忆管理', '冲突确认', '后台任务', '审计日志', 'Agent 密钥', '模型 Provider', 'AI 策略', '导入', '导出 JSON', 'inviteMember', 'grantAgent', 'saveStrategy', 'saveProvider', 'resolveConflict', 'importMemories', 'startRebuild', 'loadAudit']) {
+      expect(adminPage).toContain(marker);
+    }
+  });
+
+  it('shows the running version and update controls', () => {
+    for (const marker of ['当前版本', '版本更新', '检查更新', '/api/admin/version', 'headerVersion']) {
       expect(adminPage).toContain(marker);
     }
   });

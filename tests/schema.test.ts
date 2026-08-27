@@ -72,14 +72,16 @@ describe('memory database schema', () => {
     expect(compose).toContain('runtime-secrets:/run/sakura-secrets:ro');
     expect(compose).toMatch(/ghcr\.io\/guyao146\/sakura-mcp-server:0\.2\.\d+/);
     expect(compose).toContain('127.0.0.1:${MCP_HOST_PORT:-3001}:3000');
+    expect(compose).not.toContain('SETUP_TOKEN');
     expect(compose).not.toContain('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?');
     expect(compose).not.toMatch(/(?<!\$)\$(?:value|1)\b/);
   });
 
-  it('proxies every setup resource with the public host and token header', async () => {
+  it('proxies every token-free setup resource with the public host', async () => {
     const nginx = await readFile(new URL('../nginx-mcp.conf.example', import.meta.url), 'utf8');
     expect(nginx).toContain('proxy_set_header Host $host;');
-    expect(nginx).toContain('proxy_set_header X-Setup-Token $http_x_setup_token;');
+    expect(nginx).not.toContain('X-Setup-Token');
+    expect(nginx).toContain('location = / {');
     expect(nginx).toContain('location = /assets/setup.js');
     expect(nginx).toContain('location ^~ /api/setup/');
     expect(nginx).toContain('proxy_pass http://127.0.0.1:3001;');

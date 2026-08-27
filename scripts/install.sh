@@ -42,7 +42,6 @@ fi
 
 generate_secret() { openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n'; }
 database_password="$(generate_secret)"
-setup_token="$(generate_secret)"
 encryption_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
 bootstrap_secret="$(generate_secret)"
 
@@ -51,7 +50,6 @@ sed -i \
   -e "s#^PUBLIC_BASE_URL=.*#PUBLIC_BASE_URL=$public_url#" \
   -e "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$database_password#" \
   -e "s#^DATABASE_URL=.*#DATABASE_URL=postgresql://sakura:$database_password@postgres:5432/sakura_memory#" \
-  -e "s#^SETUP_TOKEN=.*#SETUP_TOKEN=$setup_token#" \
   -e "s#^CONFIG_ENCRYPTION_KEY=.*#CONFIG_ENCRYPTION_KEY=$encryption_key#" \
   -e "s#^MCP_API_KEYS=.*#MCP_API_KEYS=bootstrap-admin:$bootstrap_secret:memory:read|memory:write|memory:update|memory:delete|memory:export|space:create|space:manage|member:manage|agent:manage|admin:system#" \
   .env
@@ -73,6 +71,6 @@ echo "部署已启动。"
 echo "安装向导：$public_url/setup"
 echo "健康检查：$public_url/health"
 echo
-echo "重要：SETUP_TOKEN 和 CONFIG_ENCRYPTION_KEY 已写入 $PWD/.env。"
+echo "重要：CONFIG_ENCRYPTION_KEY 已写入 $PWD/.env。"
 echo "请立即安全备份 .env 和 CONFIG_ENCRYPTION_KEY，不要提交到 Git。"
 echo "下一步请先配置 Nginx HTTPS，再打开安装向导。"

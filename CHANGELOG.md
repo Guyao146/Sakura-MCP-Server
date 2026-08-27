@@ -2,6 +2,22 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.13] - 2026-08-27
+
+### Changed
+
+- Remove the first-run setup token requirement. Uninstalled instances enter the wizard directly and automatically run environment diagnostics; completed installations remain permanently locked.
+- Stop generating, exporting and proxying `SETUP_TOKEN` while keeping existing runtime secret volumes fully compatible.
+
+### Added
+
+- Display the running version in the management dashboard and let system administrators check the latest GitHub Release.
+- Cache release checks for 15 minutes, support manual refresh, and expose one shared version constant to HTTP health, installation state and MCP server metadata.
+
+### Fixed
+
+- Replace stale hard-coded `0.2.2` values in health responses, installation records and MCP protocol metadata.
+
 ## [0.2.12] - 2026-08-26
 
 ### Fixed

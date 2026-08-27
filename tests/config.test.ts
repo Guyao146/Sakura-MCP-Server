@@ -4,7 +4,6 @@ import { loadConfig } from '../src/config.js';
 const base = {
   PUBLIC_BASE_URL: 'https://mcp.example.com',
   DATABASE_URL: 'postgresql://sakura:test@localhost:5432/sakura_memory',
-  SETUP_TOKEN: 's'.repeat(32),
   CONFIG_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64url'),
   MCP_API_KEYS: 'agent:very-secret:memory:read|memory:write'
 };
@@ -27,5 +26,10 @@ describe('loadConfig', () => {
   it('uses a stable PostgreSQL host for panel-managed Compose', () => {
     const config = loadConfig({ ...base });
     expect(config.database.host).toBe('postgres');
+  });
+
+  it('does not require a setup token for first-run configuration', () => {
+    expect(() => loadConfig({ ...base })).not.toThrow();
+    expect(loadConfig({ ...base }).setup).toEqual({ encryptionKey: base.CONFIG_ENCRYPTION_KEY });
   });
 });
