@@ -35,6 +35,12 @@ describe('installation security', () => {
     expect(setupPage).toContain('AUTH=false');
     expect(setupPage).toContain('authApplicationSlug');
     expect(setupPage).toContain('获取 OpenID 配置');
+    for (const label of ['签发者地址（Issuer）', '令牌受众（Audience）', '客户端 ID（公共客户端 + PKCE）',
+      '签名密钥地址（JWKS URI）', '授权地址', '令牌地址', '用户信息地址（可选）', '权限范围字段（Scope Claim）']) {
+      expect(setupPage).toContain(label);
+    }
+    expect(setupPage).not.toContain('<label>Issuer</label>');
+    expect(setupPage).not.toContain('<label>Audience</label>');
     expect(setupScript).toContain("api('discover-authentik',{baseUrl,applicationSlug})");
     expect(setupScript).toContain('setTimeout(()=>void discoverAuthentik(false),600)');
     expect(setupScript).toContain('requestId!==discoveryRequestId');
