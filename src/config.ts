@@ -8,6 +8,8 @@ const environmentSchema = z.object({
   HOST: z.string().default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  AUTH: z.enum(['true', 'false']).optional().or(z.literal('')),
+  auth: z.enum(['true', 'false']).optional().or(z.literal('')),
   MCP_API_KEYS: z.string().default(''),
   AUTHENTIK_ISSUER: optionalUrl,
   AUTHENTIK_AUDIENCE: z.string().optional().or(z.literal('')),
@@ -42,7 +44,7 @@ export type Scope =
 
 export interface ApiKeyRecord { id: string; secret: string; scopes: Scope[]; }
 export interface AppConfig {
-  publicBaseUrl: string; host: string; port: number; logLevel: string; apiKeys: ApiKeyRecord[];
+  publicBaseUrl: string; host: string; port: number; logLevel: string; authEnabled: boolean; apiKeys: ApiKeyRecord[];
   authentik?: {
     issuer: string; audience: string; jwksUri: string; scopeClaim: string;
     clientId?: string; authorizationUrl?: string; tokenUrl?: string; userinfoUrl?: string;
@@ -72,14 +74,16 @@ function parseApiKeys(value: string): ApiKeyRecord[] {
 
 export function loadConfig(env = process.env): AppConfig {
   const value = environmentSchema.parse(env);
+  const authEnabled = value.AUTH !== 'false' && value.auth !== 'false';
   const oauthValues = [value.AUTHENTIK_ISSUER, value.AUTHENTIK_AUDIENCE, value.AUTHENTIK_JWKS_URI];
-  if (oauthValues.some(Boolean) && !oauthValues.every(Boolean)) {
+  if (authEnabled && oauthValues.some(Boolean) && !oauthValues.every(Boolean)) {
     throw new Error('AUTHENTIK_ISSUER, AUTHENTIK_AUDIENCE and AUTHENTIK_JWKS_URI must be configured together.');
   }
   return {
     publicBaseUrl: value.PUBLIC_BASE_URL.replace(/\/$/, ''), host: value.HOST, port: value.PORT, logLevel: value.LOG_LEVEL,
+    authEnabled,
     apiKeys: parseApiKeys(value.MCP_API_KEYS),
-    authentik: oauthValues.every(Boolean) ? { issuer: value.AUTHENTIK_ISSUER!, audience: value.AUTHENTIK_AUDIENCE!, jwksUri: value.AUTHENTIK_JWKS_URI!, scopeClaim: value.AUTHENTIK_SCOPE_CLAIM } : undefined,
+    authentik: authEnabled && oauthValues.every(Boolean) ? { issuer: value.AUTHENTIK_ISSUER!, audience: value.AUTHENTIK_AUDIENCE!, jwksUri: value.AUTHENTIK_JWKS_URI!, scopeClaim: value.AUTHENTIK_SCOPE_CLAIM } : undefined,
     database: { connectionString: value.DATABASE_URL, host: value.POSTGRES_HOST, maxConnections: value.DATABASE_MAX_CONNECTIONS, autoMigrate: value.AUTO_MIGRATE === 'true' },
     setup: { encryptionKey: value.CONFIG_ENCRYPTION_KEY },
     openaiCompatible: value.OPENAI_COMPATIBLE_BASE_URL ? { baseUrl: value.OPENAI_COMPATIBLE_BASE_URL.replace(/\/$/, ''), apiKey: value.OPENAI_COMPATIBLE_API_KEY || undefined, chatModel: value.OPENAI_COMPATIBLE_CHAT_MODEL || undefined, embeddingModel: value.OPENAI_COMPATIBLE_EMBEDDING_MODEL || undefined } : undefined,

@@ -33,7 +33,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   const spaces = new SpaceRepository(database);
   const identity = repository.ensureUser(principal.id, { email: principal.email, displayName: principal.displayName });
   const requireHuman = () => {
-    if (principal.source !== 'authentik') throw new Error('This operation requires an interactive Authentik user.');
+    if (principal.source === 'api_key') throw new Error('This operation requires an interactive user.');
   };
   const guarded = <T>(name: string, scopes: Scope[], handler: (args: T, userId: string, personalSpaceId: string) => Promise<unknown>) => async (args: T) => {
     let actorUserId: string | undefined;
@@ -235,8 +235,8 @@ export function createServer(database: Database, principal: Principal, audit: Au
       cursor: z.number().int().positive().optional() }
   }, guarded('audit_list', ['memory:read'], async (args, userId) => {
     if (args.space_id) await requireAgentSpaceScope(database, principal.agentId, args.space_id, 'memory:read');
-    const systemAdmin = principal.source === 'authentik'
-      && Boolean((await database.query<{ is_system_admin: boolean }>('SELECT is_system_admin FROM users WHERE id=$1', [userId])).rows[0]?.is_system_admin);
+    const systemAdmin = principal.source === 'local' || (principal.source === 'authentik'
+      && Boolean((await database.query<{ is_system_admin: boolean }>('SELECT is_system_admin FROM users WHERE id=$1', [userId])).rows[0]?.is_system_admin));
     return audit.list(userId, { spaceId: args.space_id, action: args.action, result: args.result,
       limit: args.limit, cursor: args.cursor, systemAdmin });
   }));

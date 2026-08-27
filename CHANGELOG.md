@@ -2,6 +2,20 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.15] - 2026-08-27
+
+### Added
+
+- Add `AUTH=false` and lowercase `auth=false` support for explicitly access-restricted single-user deployments.
+- Skip the Authentik step in the first-run wizard when authentication is disabled.
+- Provide a stable local system administrator, personal memory space and full-scope MCP principal in no-auth mode.
+- Show the active authentication mode in health responses and the management dashboard.
+
+### Security
+
+- Keep authentication enabled by default. The dashboard displays a permanent warning when no-auth mode is active because every network visitor receives full administrator access.
+- Preserve CSRF validation for management write requests even when external identity authentication is disabled.
+
 ## [0.2.14] - 2026-08-27
 
 ### Fixed

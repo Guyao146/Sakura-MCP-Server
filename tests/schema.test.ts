@@ -72,6 +72,8 @@ describe('memory database schema', () => {
     expect(compose).toContain('runtime-secrets:/run/sakura-secrets:ro');
     expect(compose).toMatch(/ghcr\.io\/guyao146\/sakura-mcp-server:0\.2\.\d+/);
     expect(compose).toContain('127.0.0.1:${MCP_HOST_PORT:-3001}:3000');
+    expect(compose).toContain('AUTH: ${AUTH:-}');
+    expect(compose).toContain('auth: ${auth:-}');
     expect(compose).not.toContain('SETUP_TOKEN');
     expect(compose).not.toContain('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?');
     expect(compose).not.toMatch(/(?<!\$)\$(?:value|1)\b/);
@@ -85,6 +87,12 @@ describe('memory database schema', () => {
     expect(nginx).toContain('location = /assets/setup.js');
     expect(nginx).toContain('location ^~ /api/setup/');
     expect(nginx).toContain('proxy_pass http://127.0.0.1:3001;');
+  });
+
+  it('keeps management APIs unavailable until installation completes', async () => {
+    const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(source).toContain("app.use('/api/admin/*', async (context, next)");
+    expect(source).toContain("error: 'setup_required'");
   });
 
   it('indexes security audit actions and request correlation', async () => {

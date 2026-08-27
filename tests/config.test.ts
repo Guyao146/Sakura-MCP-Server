@@ -32,4 +32,17 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base })).not.toThrow();
     expect(loadConfig({ ...base }).setup).toEqual({ encryptionKey: base.CONFIG_ENCRYPTION_KEY });
   });
+
+  it('enables authentication by default and accepts either AUTH=false spelling', () => {
+    expect(loadConfig({ ...base }).authEnabled).toBe(true);
+    expect(loadConfig({ ...base, AUTH: 'false' }).authEnabled).toBe(false);
+    expect(loadConfig({ ...base, auth: 'false' }).authEnabled).toBe(false);
+    expect(loadConfig({ ...base, AUTH: 'true', auth: 'false' }).authEnabled).toBe(false);
+  });
+
+  it('ignores incomplete Authentik variables when authentication is disabled', () => {
+    const config = loadConfig({ ...base, auth: 'false', AUTHENTIK_ISSUER: 'https://login.example.com/app' });
+    expect(config.authEnabled).toBe(false);
+    expect(config.authentik).toBeUndefined();
+  });
 });

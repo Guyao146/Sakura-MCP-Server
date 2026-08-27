@@ -5,7 +5,7 @@ import type { Database } from './database.js';
 
 export interface Principal {
   id: string;
-  source: 'api_key' | 'authentik';
+  source: 'api_key' | 'authentik' | 'local';
   scopes: Scope[];
   expiresAt: number;
   email?: string;
@@ -25,6 +25,12 @@ export class AuthService {
   }
 
   async authenticate(header: string | undefined): Promise<Principal> {
+    if (!this.config.authEnabled) return {
+      id: 'local-admin', source: 'local', scopes: [
+        'memory:read', 'memory:write', 'memory:update', 'memory:delete', 'memory:export',
+        'space:create', 'space:manage', 'member:manage', 'agent:manage', 'admin:system'
+      ], expiresAt: Math.floor(Date.now() / 1000) + 300, displayName: 'Local Administrator'
+    };
     if (!header?.startsWith('Bearer ')) throw new Error('Missing Bearer credential.');
     const credential = header.slice(7).trim();
     const apiKey = this.config.apiKeys.find(key => equal(key.secret, credential));

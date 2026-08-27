@@ -21,4 +21,15 @@ describe('AuthService API keys', () => {
     const principal = await new AuthService(config).authenticate('Bearer correct-secret');
     expect(() => requireScopes(principal, ['memory:delete'])).toThrow('Missing required scope');
   });
+
+  it('uses a full-scope local administrator without a Bearer header when AUTH=false', async () => {
+    const disabled = loadConfig({
+      PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: 'postgresql://localhost/test', AUTH: 'false',
+      CONFIG_ENCRYPTION_KEY: Buffer.alloc(32, 2).toString('base64url'), MCP_API_KEYS: ''
+    });
+    await expect(new AuthService(disabled).authenticate(undefined)).resolves.toMatchObject({
+      id: 'local-admin', source: 'local', displayName: 'Local Administrator',
+      scopes: expect.arrayContaining(['memory:read', 'memory:write', 'space:manage', 'admin:system'])
+    });
+  });
 });

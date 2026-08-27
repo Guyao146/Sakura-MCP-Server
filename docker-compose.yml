@@ -64,7 +64,7 @@ services:
       retries: 10
 
   sakura-mcp:
-    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.14}
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.15}
     container_name: sakura-mcp-server-app
     pull_policy: always
     restart: unless-stopped
@@ -73,6 +73,8 @@ services:
       HOST: ${HOST:-0.0.0.0}
       PORT: ${PORT:-3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      AUTH: ${AUTH:-}
+      auth: ${auth:-}
       DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-20}
       POSTGRES_HOST: sakura-mcp-server-postgres
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}

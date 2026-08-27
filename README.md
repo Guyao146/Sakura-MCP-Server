@@ -73,7 +73,7 @@ Agent 全局 scopes
 ∩ Agent 所属用户在目标空间的成员角色
 ```
 
-Agent 只能列出明确授权的空间；撤销后下一次请求立即失效。创建、授权和撤销 Agent Key 必须由 Authentik 人工用户执行，Agent 不能自行创建子 Key。
+Agent 只能列出明确授权的空间；撤销后下一次请求立即失效。创建、授权和撤销 Agent Key 必须由交互式管理员（Authentik 用户或 `AUTH=false` 的本地管理员）执行，Agent 不能自行创建子 Key。
 
 ## MCP Tools
 
@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.14
+ghcr.io/guyao146/sakura-mcp-server:0.2.15
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +351,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.14
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.15
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -418,10 +418,35 @@ https://mcp.example.com/setup
 
 ## 安装向导
 
+### 可选的无认证模式
+
+认证默认启用。仅当 Sakura-MCP-Server 位于已通过防火墙、VPN 或反向代理白名单限制访问的私有网络时，可以在 `.env` 或宝塔 Compose 环境变量中设置：
+
+```dotenv
+AUTH=false
+```
+
+同时兼容用户指定的小写写法：
+
+```dotenv
+auth=false
+```
+
+任意一个变量明确为 `false` 都会启用单用户无认证模式。在此模式下：
+
+- 安装向导自动跳过 Authentik 配置和连接测试；
+- `/admin` 无需登录，使用稳定的 `Local Administrator` 系统管理员身份；
+- `/mcp` 无需 Bearer Token，使用同一本地身份和完整 scopes；
+- 管理写请求仍使用 CSRF Token；
+- 管理后台会永久显示红色安全警告；
+- 任何能连接该站点的人都拥有完整管理和记忆访问权限。
+
+公网部署不要设置 `AUTH=false`。已完成安装的实例可以通过修改该变量并重启容器切换模式；从无认证模式恢复 `AUTH=true` 前，必须确保数据库或环境变量中已有完整 Authentik 配置，否则浏览器登录不可用。
+
 首次启动的中文 Web 安装向导包含四个步骤：
 
 1. 页面自动检查 PostgreSQL、pgvector 与迁移；
-2. 配置并测试 Authentik Issuer、Audience、JWKS 和首位管理员邮箱；
+2. `AUTH=true` 时配置并测试 Authentik Issuer、Audience、JWKS 和首位管理员邮箱；`AUTH=false` 时自动跳过；
 3. 可选配置并测试 OpenAI-compatible 或 Ollama；
 4. 确认配置加密密钥已备份，完成安装并锁定向导。
 
@@ -435,7 +460,7 @@ https://mcp.example.com/setup
 安装完成后：
 
 - Setup 配置接口永久返回 `410 setup_locked`；
-- Authentik 和 Provider 配置从数据库加载；
+- `AUTH=true` 时 Authentik 配置从数据库加载；Provider 配置始终从数据库加载；
 - OpenAI-compatible API Key 使用 AES-256-GCM 加密存储；
 - 浏览器和 API 均不能重新开启安装向导。
 
@@ -511,13 +536,15 @@ API Key 客户端使用：
 Authorization: Bearer <每个 Agent 独立的密钥>
 ```
 
+`AUTH=false` 时 `/mcp` 不需要 Authorization Header，并统一使用本地管理员身份；这等同于向所有网络访问者开放完整权限，因此只允许在受访问控制的私有网络使用。
+
 支持 OAuth 的客户端通过 RFC 9728 元数据发现 Authentik：
 
 ```text
 /.well-known/oauth-protected-resource/mcp
 ```
 
-Authentik Token 必须有专属于 MCP Server 的 audience；服务不会把用户 Token 透传给模型 Provider。
+`AUTH=true` 时 Authentik Token 必须有专属于 MCP Server 的 audience；服务不会把用户 Token 透传给模型 Provider。
 
 ## 本地开发
 
@@ -534,7 +561,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.14`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.15`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 

@@ -37,7 +37,7 @@ const audit = new AuditLogger(baseConfig.auditLogPath, database);
 const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
 let config = await settings.apply(baseConfig);
 let auth = new AuthService(config, database);
-const setup = new SetupService(database, settings);
+const setup = new SetupService(baseConfig.authEnabled, database, settings);
 const updateChecker = new UpdateChecker();
 const webSessions = new WebSessionService(database, () => config);
 const memories = new MemoryRepository(database);
@@ -58,6 +58,12 @@ app.use('/mcp', limiter.middleware('mcp', baseConfig.security.mcpPerMinute, base
 app.use('/auth/*', limiter.middleware('auth', baseConfig.security.authPerMinute, baseConfig.security.trustProxy));
 app.use('/api/setup/*', limiter.middleware('setup', baseConfig.security.setupPerMinute, baseConfig.security.trustProxy));
 app.use('/api/admin/*', limiter.middleware('web', baseConfig.security.webPerMinute, baseConfig.security.trustProxy));
+app.use('/api/admin/*', async (context, next) => {
+  if (!(await settings.installation()).completed) {
+    return context.json({ error: 'setup_required', error_description: 'Complete installation at /setup first.' }, 503);
+  }
+  await next();
+});
 
 app.onError((error, context) => {
   logger.error({ err: error, path: context.req.path }, 'Unhandled HTTP error');
@@ -75,12 +81,14 @@ app.get('/setup', context => context.html(setupPage));
 app.get('/assets/setup.js', context => context.body(setupScript, 200, {
   'Content-Type': 'application/javascript; charset=UTF-8', 'Cache-Control': 'no-store'
 }));
-app.get('/api/setup/status', async context => context.json(await settings.installation()));
+app.get('/api/setup/status', async context => context.json({ ...(await settings.installation()), authEnabled: baseConfig.authEnabled }));
 app.use('/api/setup/*', setupGuard);
 app.get('/api/setup/diagnostics', async context => context.json(await setup.diagnostics()));
 app.post('/api/setup/test-authentik', async context => {
   try {
+    if (!baseConfig.authEnabled) return context.json({ status: 'skipped', authEnabled: false });
     const body = setupInputSchema.pick({ authentik: true }).parse(await context.req.json());
+    if (!body.authentik) throw new Error('Authentik configuration is required.');
     return context.json(await setup.testAuthentik(body.authentik));
   } catch (error) { return context.json({ error: 'validation_failed', error_description: error instanceof Error ? error.message : 'Validation failed.' }, 400); }
 });
@@ -106,10 +114,12 @@ app.post('/api/setup/complete', async context => {
 
 app.get('/auth/login', async context => {
   if (!(await settings.installation()).completed) return context.redirect('/setup');
+  if (!config.authEnabled) return context.redirect('/admin');
   try { return context.redirect(await webSessions.begin(context.req.query('return_to') ?? '/admin')); }
   catch (error) { return context.json({ error: 'login_failed', error_description: error instanceof Error ? error.message : 'Login failed.' }, 500); }
 });
 app.get('/auth/callback', async context => {
+  if (!config.authEnabled) return context.json({ error: 'auth_disabled', error_description: 'Authentication is disabled.' }, 404);
   const code = context.req.query('code'); const state = context.req.query('state');
   if (!code || !state) return context.json({ error: 'invalid_callback', error_description: 'Missing code or state.' }, 400);
   try {
@@ -124,6 +134,7 @@ app.get('/auth/callback', async context => {
   }
 });
 app.post('/auth/logout', async context => {
+  if (!config.authEnabled) return context.json({ loggedOut: true, authEnabled: false });
   try {
     const token = WebSessionService.readCookie(context.req.header('cookie'));
     const identity = await webSessions.authenticate(token);
@@ -140,13 +151,14 @@ app.post('/auth/logout', async context => {
 });
 app.get('/api/me', async context => {
   try {
-    const identity = await webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));
+    const identity = await adminIdentity(context);
     return context.json({ id: identity.userId, email: identity.email, displayName: identity.displayName,
       avatarUrl: identity.avatarUrl, isSystemAdmin: identity.isSystemAdmin, expiresAt: identity.expiresAt });
   } catch (error) { return context.json({ error: 'unauthorized', error_description: error instanceof Error ? error.message : 'Unauthorized.' }, 401); }
 });
 app.get('/admin', async context => {
   if (!(await settings.installation()).completed) return context.redirect('/setup');
+  if (!config.authEnabled) return context.html(adminPage);
   try {
     await adminIdentity(context);
     return context.html(adminPage);
@@ -165,7 +177,7 @@ const agentScopeSchema = z.array(z.enum([
 
 app.get('/api/admin/bootstrap', async context => adminApi(context, false, async identity => ({
   csrf: webSessions.csrf(identity),
-  version: APP_VERSION,
+  version: APP_VERSION, authEnabled: config.authEnabled,
   me: { id: identity.userId, email: identity.email, displayName: identity.displayName, isSystemAdmin: identity.isSystemAdmin },
   spaces: await spaces.list(identity.userId), agents: await agents.list(identity.userId)
 })));
@@ -235,13 +247,13 @@ app.get('/api/admin/exports', async context => {
     identity = await adminIdentity(context);
     const query = z.object({ space_id: z.string().uuid(), format: z.enum(['json','markdown']).default('json') }).parse(context.req.query());
     const exported = await transfer.export(identity.userId, query.space_id, query.format);
-    await audit.record({ actorUserId: identity.userId, spaceId: query.space_id, authSource: 'authentik',
+    await audit.record({ actorUserId: identity.userId, spaceId: query.space_id, authSource: webAuthSource(),
       action: 'web.GET./api/admin/exports', targetType: 'space_export', targetId: query.space_id, result: 'success', metadata: { format: query.format } });
     context.header('Content-Type', `${exported.mimeType}; charset=utf-8`);
     context.header('Content-Disposition', `attachment; filename="${exported.filename}"`);
     return context.body(exported.content);
   } catch (error) {
-    await audit.record({ actorUserId: identity?.userId, authSource: identity ? 'authentik' : undefined,
+    await audit.record({ actorUserId: identity?.userId, authSource: identity ? webAuthSource() : undefined,
       action: 'web.GET./api/admin/exports', result: 'error', metadata: { message: error instanceof Error ? error.message : 'Export failed.' } });
     return context.json({ error: 'export_failed', error_description: error instanceof Error ? error.message : 'Export failed.' }, 400);
   }
@@ -310,11 +322,12 @@ app.get('/health', async context => {
          count(*) FILTER(WHERE status='failed')::text AS failed FROM ingestion_jobs`)
     ]);
     return context.json({ status: 'ok', service: 'Sakura-MCP-Server', version: APP_VERSION,
-      database: 'ok', pgvector: vector.rows[0]?.version ?? 'missing', installed: installation.completed,
+      database: 'ok', pgvector: vector.rows[0]?.version ?? 'missing', installed: installation.completed, authEnabled: config.authEnabled,
       worker: { enabled: baseConfig.worker.enabled, pending: Number(queue.rows[0].pending),
         processing: Number(queue.rows[0].processing), failed: Number(queue.rows[0].failed) } });
   } catch {
-    return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: APP_VERSION, database: 'unavailable' }, 503);
+    return context.json({ status: 'degraded', service: 'Sakura-MCP-Server', version: APP_VERSION,
+      database: 'unavailable', authEnabled: config.authEnabled }, 503);
   }
 });
 app.get('/.well-known/oauth-protected-resource/mcp', context => {
@@ -349,7 +362,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 }
 
 async function adminIdentity(context: Context): Promise<WebIdentity> {
-  return webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')));
+  return config.authEnabled
+    ? webSessions.authenticate(WebSessionService.readCookie(context.req.header('cookie')))
+    : webSessions.localIdentity();
 }
 
 async function adminApi(context: Context, write: boolean, handler: (identity: WebIdentity) => Promise<unknown>): Promise<Response> {
@@ -358,20 +373,20 @@ async function adminApi(context: Context, write: boolean, handler: (identity: We
   try {
     identity = await adminIdentity(context);
     if (write && !webSessions.verifyCsrf(identity, context.req.header('x-csrf-token'))) {
-      await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action, result: 'error',
+      await audit.record({ actorUserId: identity.userId, authSource: webAuthSource(), action, result: 'error',
         metadata: { reason: 'csrf_failed' } });
       return context.json({ error: 'csrf_failed', error_description: 'CSRF token is missing or invalid.' }, 403);
     }
     const result = await handler(identity);
     const object = result && typeof result === 'object' ? result as Record<string, unknown> : {};
-    await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action,
+    await audit.record({ actorUserId: identity.userId, authSource: webAuthSource(), action,
       spaceId: auditUuid(context.req.query('space_id')) ?? auditUuid(object.space_id) ?? auditUuid(object.spaceId),
       targetId: auditUuid(context.req.param('id')) ?? auditUuid(object.id), result: 'success' });
     return context.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Request failed.';
     const unauthorized = /session is|session is missing/i.test(message);
-    await audit.record({ actorUserId: identity?.userId, authSource: identity ? 'authentik' : undefined, action, result: 'error', metadata: { message } });
+    await audit.record({ actorUserId: identity?.userId, authSource: identity ? webAuthSource() : undefined, action, result: 'error', metadata: { message } });
     return context.json({ error: unauthorized ? 'unauthorized' : 'request_failed', error_description: message }, unauthorized ? 401 : 400);
   }
 }
@@ -379,3 +394,5 @@ async function adminApi(context: Context, write: boolean, handler: (identity: We
 function auditUuid(value: unknown): string | undefined {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : undefined;
 }
+
+function webAuthSource(): 'authentik' | 'local' { return config.authEnabled ? 'authentik' : 'local'; }

@@ -27,10 +27,11 @@ export class SettingsRepository {
   async apply(base: AppConfig): Promise<AppConfig> {
     const state = await this.installation();
     if (!state.completed) return base;
-    const authentik = await this.get<AppConfig['authentik']>('authentik');
+    const authentik = base.authEnabled ? await this.get<AppConfig['authentik']>('authentik') : undefined;
     const openaiCompatible = await this.get<AppConfig['openaiCompatible']>('provider.openai_compatible');
     const ollama = await this.get<AppConfig['ollama']>('provider.ollama');
-    return { ...base, authentik: authentik ?? base.authentik, openaiCompatible: openaiCompatible ?? base.openaiCompatible, ollama: ollama ?? base.ollama };
+    return { ...base, authentik: base.authEnabled ? authentik ?? base.authentik : undefined,
+      openaiCompatible: openaiCompatible ?? base.openaiCompatible, ollama: ollama ?? base.ollama };
   }
 
   async saveProvider(kind: 'openai_compatible' | 'ollama', value: AppConfig['openaiCompatible'] | AppConfig['ollama']): Promise<void> {
@@ -44,8 +45,8 @@ export class SettingsRepository {
   }
 
   async complete(input: {
-    administratorEmail: string;
-    authentik: NonNullable<AppConfig['authentik']>;
+    administratorEmail?: string;
+    authentik?: NonNullable<AppConfig['authentik']>;
     openaiCompatible?: AppConfig['openaiCompatible'];
     ollama?: AppConfig['ollama'];
   }): Promise<void> {
@@ -58,13 +59,16 @@ export class SettingsRepository {
         `INSERT INTO system_settings(key,value,encrypted) VALUES($1,$2,$3)
          ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,encrypted=EXCLUDED.encrypted,updated_at=now()`,
         [key, encrypted ? this.cipher.encrypt(value) : value, encrypted]);
-      await put('authentik', input.authentik, false);
+      if (input.authentik) await put('authentik', input.authentik, false);
+      else await client.query("DELETE FROM system_settings WHERE key='authentik'");
       if (input.openaiCompatible) await put('provider.openai_compatible', input.openaiCompatible, true);
       if (input.ollama) await put('provider.ollama', input.ollama, false);
-      await client.query('INSERT INTO system_admin_allowlist(email) VALUES(lower($1)) ON CONFLICT(email) DO NOTHING', [input.administratorEmail]);
+      if (input.administratorEmail) {
+        await client.query('INSERT INTO system_admin_allowlist(email) VALUES(lower($1)) ON CONFLICT(email) DO NOTHING', [input.administratorEmail]);
+      }
       await client.query(
         `UPDATE installation_state SET completed=true,completed_at=now(),installed_version=$1,administrator_email=lower($2),updated_at=now()
-         WHERE singleton=true`, [APP_VERSION, input.administratorEmail]);
+         WHERE singleton=true`, [APP_VERSION, input.administratorEmail ?? null]);
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }

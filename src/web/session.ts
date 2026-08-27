@@ -13,7 +13,17 @@ export interface WebIdentity {
 }
 
 export class WebSessionService {
+  private localIdentityPromise?: Promise<WebIdentity>;
   constructor(private readonly database: Database, private readonly getConfig: () => AppConfig) {}
+
+  async localIdentity(): Promise<WebIdentity> {
+    if (this.getConfig().authEnabled) throw new Error('Local identity is only available when AUTH=false.');
+    if (!this.localIdentityPromise) this.localIdentityPromise = this.createLocalIdentity().catch(error => {
+      this.localIdentityPromise = undefined;
+      throw error;
+    });
+    return this.localIdentityPromise;
+  }
 
   async begin(returnTo = '/admin') {
     const auth = this.requireConfig();
@@ -117,6 +127,16 @@ export class WebSessionService {
 
   static readCookie(header: string | undefined): string | undefined {
     return header?.split(';').map(item => item.trim()).find(item => item.startsWith('sakura_session='))?.slice('sakura_session='.length);
+  }
+
+  private async createLocalIdentity(): Promise<WebIdentity> {
+    const identity = await new MemoryRepository(this.database).ensureUser('local-admin', { displayName: 'Local Administrator' });
+    await this.database.query('UPDATE users SET is_system_admin=true WHERE id=$1', [identity.userId]);
+    return {
+      sessionId: '00000000-0000-4000-8000-000000000001', userId: identity.userId, subject: 'local-admin',
+      email: null, displayName: 'Local Administrator', avatarUrl: null, isSystemAdmin: true,
+      expiresAt: '9999-12-31T23:59:59.999Z'
+    };
   }
 
   private requireConfig(): Required<NonNullable<AppConfig['authentik']>> {
