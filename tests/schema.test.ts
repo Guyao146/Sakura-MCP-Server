@@ -105,6 +105,16 @@ describe('memory database schema', () => {
     expect(source).toContain('resource: `${config.publicBaseUrl}/mcp`');
   });
 
+  it('exposes system-admin Authentik recovery endpoints', async () => {
+    const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(source).toContain("app.get('/api/admin/authentik'");
+    expect(source).toContain("app.put('/api/admin/authentik'");
+    expect(source).toContain('await setup.testAuthentik(body.authentik)');
+    expect(source).toContain('await settings.saveAuthentik(body.authentik, body.administratorEmail)');
+    expect(source).toContain('restartRequired: !baseConfig.authEnabled');
+    expect(source).toContain("'Authentik 配置已保存。请将 AUTH 恢复为 true 并重启应用。'");
+  });
+
   it('indexes security audit actions and request correlation', async () => {
     const sql = await readFile(new URL('../migrations/007_audit_security.sql', import.meta.url), 'utf8');
     expect(sql).toContain('auth_source text');

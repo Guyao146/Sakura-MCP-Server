@@ -18,7 +18,7 @@ import { JobRepository } from './jobs/repository.js';
 import { BackgroundWorker } from './jobs/worker.js';
 import { createServer } from './tools.js';
 import { setupPage, setupScript } from './setup/page.js';
-import { authentikDiscoveryInputSchema, SetupService, setupInputSchema } from './setup/service.js';
+import { authentikConfigSchema, authentikDiscoveryInputSchema, SetupService, setupInputSchema } from './setup/service.js';
 import { SettingsRepository } from './settings/repository.js';
 import { WebSessionService } from './web/session.js';
 import type { WebIdentity } from './web/session.js';
@@ -38,7 +38,7 @@ const audit = new AuditLogger(baseConfig.auditLogPath, database);
 const settings = new SettingsRepository(database, baseConfig.setup.encryptionKey);
 let config = await settings.apply(baseConfig);
 let auth = new AuthService(config, database);
-const setup = new SetupService(baseConfig.authEnabled, database, settings);
+const setup = new SetupService(baseConfig.authEnabled, baseConfig.publicBaseUrl, database, settings);
 const updateChecker = new UpdateChecker();
 const webSessions = new WebSessionService(database, () => config);
 const memories = new MemoryRepository(database);
@@ -315,6 +315,24 @@ app.put('/api/admin/providers/:kind', async context => adminApi(context, true, a
   config = await settings.apply(baseConfig);
   auth = new AuthService(config, database);
   return { saved: true };
+}));
+app.get('/api/admin/authentik', async context => adminApi(context, false, async identity => {
+  if (!identity.isSystemAdmin) throw new Error('System administrator permission is required.');
+  const stored = await settings.get<NonNullable<typeof config.authentik>>('authentik');
+  const installation = await settings.installation();
+  return { authEnabled: config.authEnabled, configured: Boolean(stored ?? config.authentik),
+    authentik: stored ?? config.authentik ?? null, administratorEmail: installation.administrator_email };
+}));
+app.put('/api/admin/authentik', async context => adminApi(context, true, async identity => {
+  if (!identity.isSystemAdmin) throw new Error('System administrator permission is required.');
+  const body = z.object({ administratorEmail: z.email(), authentik: authentikConfigSchema }).parse(await context.req.json());
+  const validation = await setup.testAuthentik(body.authentik);
+  await settings.saveAuthentik(body.authentik, body.administratorEmail);
+  config = await settings.apply(baseConfig);
+  auth = new AuthService(config, database);
+  return { saved: true, publicClient: validation.publicClient,
+    restartRequired: !baseConfig.authEnabled, message: baseConfig.authEnabled
+      ? 'Authentik 配置已保存并立即生效。' : 'Authentik 配置已保存。请将 AUTH 恢复为 true 并重启应用。' };
 }));
 app.get('/api/admin/audit', async context => adminApi(context, false, async identity => {
   const query = z.object({ space_id: z.string().uuid().optional(), action: z.string().max(200).optional(),

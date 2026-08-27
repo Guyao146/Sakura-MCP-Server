@@ -1,6 +1,6 @@
 {
   "name": "sakura-mcp-server",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "Multi-user long-term memory platform for every MCP-compatible AI agent.",
   "type": "module",
   "main": "dist/index.js",

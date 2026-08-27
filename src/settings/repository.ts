@@ -44,6 +44,22 @@ export class SettingsRepository {
       [key, stored, kind === 'openai_compatible']);
   }
 
+  async saveAuthentik(value: NonNullable<AppConfig['authentik']>, administratorEmail: string): Promise<void> {
+    const client = await this.database.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO system_settings(key,value,encrypted) VALUES('authentik',$1,false)
+         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,encrypted=false,updated_at=now()`, [value]);
+      await client.query('INSERT INTO system_admin_allowlist(email) VALUES(lower($1)) ON CONFLICT(email) DO NOTHING',
+        [administratorEmail]);
+      await client.query('UPDATE installation_state SET administrator_email=lower($1),updated_at=now() WHERE singleton=true',
+        [administratorEmail]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  }
+
   async complete(input: {
     administratorEmail?: string;
     authentik?: NonNullable<AppConfig['authentik']>;

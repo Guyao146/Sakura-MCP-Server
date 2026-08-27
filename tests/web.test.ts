@@ -30,9 +30,14 @@ describe('Web management security', () => {
   });
 
   it('includes management views for spaces, memories, Agents and members', () => {
-    for (const marker of ['记忆空间', '记忆管理', '冲突确认', '后台任务', '审计日志', 'Agent 密钥', '模型 Provider', 'AI 策略', '导入', '导出 JSON', 'inviteMember', 'grantAgent', 'saveStrategy', 'saveProvider', 'resolveConflict', 'importMemories', 'startRebuild', 'loadAudit']) {
+    for (const marker of ['记忆空间', '记忆管理', '冲突确认', '后台任务', '审计日志', 'Agent 密钥', '身份认证', '模型 Provider', 'AI 策略', '导入', '导出 JSON', 'inviteMember', 'grantAgent', 'saveStrategy', 'saveProvider', 'loadAuthentik', 'saveAuthentik', 'resolveConflict', 'importMemories', 'startRebuild', 'loadAudit']) {
       expect(adminPage).toContain(marker);
     }
+  });
+
+  it('provides an Authentik recovery form with mandatory validation', () => {
+    for (const marker of ['/api/admin/authentik', 'Public Client + PKCE', '测试并保存', 'saveAuthentikButton',
+      '签发者地址（Issuer）', '令牌受众（Audience）', '系统管理员邮箱']) expect(adminPage).toContain(marker);
   });
 
   it('uses the root domain as the preferred MCP URL', () => {

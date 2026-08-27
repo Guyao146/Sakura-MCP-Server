@@ -4,12 +4,14 @@ import { OllamaProvider } from '../providers/ollama.js';
 import { OpenAICompatibleProvider } from '../providers/openai-compatible.js';
 import type { SettingsRepository } from '../settings/repository.js';
 
+export const authentikConfigSchema = z.object({
+  issuer: z.url(), audience: z.string().min(1).max(500), jwksUri: z.url(), scopeClaim: z.string().min(1).max(100).default('scope'),
+  clientId: z.string().min(1).max(500), authorizationUrl: z.url(), tokenUrl: z.url(), userinfoUrl: z.url().optional()
+});
+
 export const setupInputSchema = z.object({
   administratorEmail: z.email().optional(),
-  authentik: z.object({
-    issuer: z.url(), audience: z.string().min(1).max(500), jwksUri: z.url(), scopeClaim: z.string().min(1).max(100).default('scope'),
-    clientId: z.string().min(1).max(500), authorizationUrl: z.url(), tokenUrl: z.url(), userinfoUrl: z.url().optional()
-  }).optional(),
+  authentik: authentikConfigSchema.optional(),
   openaiCompatible: z.object({ baseUrl: z.url(), apiKey: z.string().max(1000).optional(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).optional(),
   ollama: z.object({ baseUrl: z.url(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).optional()
 });
@@ -30,7 +32,8 @@ const authentikDiscoverySchema = z.object({
 });
 
 export class SetupService {
-  constructor(private readonly authEnabled: boolean, private readonly database: Database, private readonly settings: SettingsRepository) {}
+  constructor(private readonly authEnabled: boolean, private readonly publicBaseUrl: string,
+    private readonly database: Database, private readonly settings: SettingsRepository) {}
 
   async diagnostics() {
     const version = await this.database.query<{ version: string }>('SELECT version()');
@@ -84,7 +87,37 @@ export class SetupService {
     const jwks = await jwksResponse.json() as { keys?: unknown[] };
     if (!metadata.authorization_endpoint || !metadata.token_endpoint) throw new Error('Authentik metadata is missing OAuth endpoints.');
     if (!Array.isArray(jwks.keys) || jwks.keys.length === 0) throw new Error('Authentik JWKS contains no signing keys.');
-    return { issuer: metadata.issuer, authorizationEndpoint: metadata.authorization_endpoint, tokenEndpoint: metadata.token_endpoint, signingKeys: jwks.keys.length };
+    if (metadata.issuer?.replace(/\/$/, '') !== issuer) throw new Error('Authentik metadata issuer does not match the configured Issuer.');
+    const publicClient = await this.testPublicClient(authentik);
+    return { issuer: metadata.issuer, authorizationEndpoint: metadata.authorization_endpoint,
+      tokenEndpoint: metadata.token_endpoint, signingKeys: jwks.keys.length, publicClient };
+  }
+
+  private async testPublicClient(authentik: NonNullable<SetupInput['authentik']>): Promise<boolean> {
+    const response = await fetch(authentik.tokenUrl, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', client_id: authentik.clientId,
+        code: 'sakura-public-client-preflight-invalid-code',
+        redirect_uri: `${this.publicBaseUrl}/auth/callback`,
+        code_verifier: 'sakura_public_client_preflight_verifier_0123456789ABCDEFG'
+      }),
+      redirect: 'error', signal: AbortSignal.timeout(10_000)
+    });
+    if (response.ok) throw new Error('Authentik Token Endpoint unexpectedly accepted an invalid authorization code.');
+    const raw = await readBoundedText(response, 64 * 1024);
+    let decoded: unknown;
+    try { decoded = JSON.parse(raw); }
+    catch { throw new Error(`Authentik Public Client preflight returned HTTP ${response.status} without a valid OAuth error.`); }
+    const object = decoded && typeof decoded === 'object' ? decoded as Record<string, unknown> : {};
+    const code = typeof object.error === 'string' ? object.error : '';
+    const description = typeof object.error_description === 'string'
+      ? object.error_description.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : '';
+    if (code === 'invalid_grant') return true;
+    if (code === 'invalid_client') {
+      throw new Error(`Authentik Public Client 预检失败：invalid_client${description ? `：${description}` : ''}。请将 OAuth2/OIDC 提供方的客户端类型改为 Public，并确认 Client ID 正确。`);
+    }
+    throw new Error(`Authentik Public Client 预检失败（HTTP ${response.status}）${code ? `：${code}` : ''}${description ? `：${description}` : ''}。`);
   }
 
   async testProvider(input: Pick<SetupInput, 'openaiCompatible' | 'ollama'>) {
@@ -105,6 +138,7 @@ export class SetupService {
     if (this.authEnabled && (!input.administratorEmail || !input.authentik)) {
       throw new Error('Administrator email and Authentik configuration are required when AUTH=true.');
     }
+    if (this.authEnabled && input.authentik) await this.testAuthentik(input.authentik);
     await this.settings.complete(this.authEnabled ? input : {
       openaiCompatible: input.openaiCompatible, ollama: input.ollama
     });

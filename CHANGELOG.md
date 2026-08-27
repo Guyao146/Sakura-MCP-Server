@@ -2,6 +2,18 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.20] - 2026-08-27
+
+### Added
+
+- Validate Authentik Public Client behavior during setup using a safe invalid-code PKCE Token Endpoint preflight; only `invalid_grant` is accepted.
+- Add system-administrator Authentik recovery APIs and a management page for testing and atomically saving identity configuration.
+- Support a documented, access-restricted `AUTH=false` recovery workflow for installations locked out by broken Authentik settings.
+
+### Fixed
+
+- Prevent installation from completing when Authentik returns `invalid_client`, including Confidential Client, wrong Client ID, or unsupported authentication-method configurations.
+
 ## [0.2.19] - 2026-08-27
 
 ### Fixed

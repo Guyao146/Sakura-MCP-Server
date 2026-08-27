@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.19
+ghcr.io/guyao146/sakura-mcp-server:0.2.20
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +351,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.19
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.20
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -499,6 +499,17 @@ https://mcp.example.com/auth/login
 https://mcp.example.com/admin
 ```
 
+如果 Authentik 配置错误导致无法登录管理后台，可执行受控恢复：
+
+1. 先在防火墙、VPN、Cloudflare Access 或 Nginx 中只允许管理员来源；
+2. 临时将应用环境变量设置为 `AUTH=false` 并重建应用容器；
+3. 打开 `/admin`，进入“身份认证”；
+4. 修正 Client ID、Issuer、JWKS、授权/令牌地址和管理员邮箱，点击“测试并保存”；
+5. 页面确认 Public Client + PKCE 预检通过后，将 `AUTH=true` 恢复并再次重建应用容器；
+6. 从 `/auth/login` 发起全新登录，不要刷新旧的 callback URL。
+
+恢复模式会暂时让所有能够访问站点的人拥有系统管理员权限，禁止在未限制网络访问的公网环境中使用。
+
 当前 Web 管理后台支持：
 
 - 查看个人空间和共享空间；
@@ -509,6 +520,7 @@ https://mcp.example.com/admin
 - 查看 Agent scope、前缀、到期、使用和撤销状态；
 - 为 Agent 配置空间级 scopes；
 - 立即撤销 Agent Key；
+- 测试、修复并保存 Authentik Public Client 配置；
 - 显示当前运行版本，并由系统管理员检查 GitHub 最新 Release。
 
 所有管理 API 都从 HttpOnly Session 解析内部用户身份，不接受客户端传入 `user_id`。写请求还必须提供与 Session ID 绑定的 HMAC-SHA256 CSRF Token；页面中的服务端数据使用 DOM `textContent` 渲染，不将用户内容拼接进 HTML。
@@ -590,7 +602,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.19`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.20`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 
