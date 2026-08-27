@@ -2,6 +2,18 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.16] - 2026-08-27
+
+### Added
+
+- Add Authentik OpenID Connect discovery to the first-run wizard using an HTTPS Authentik origin and application slug.
+- Automatically fetch `/application/o/<slug>/.well-known/openid-configuration` after a short input debounce and provide a manual retry button.
+- Fill Issuer, JWKS, authorization, token and UserInfo endpoints from validated discovery metadata while leaving Audience and Client ID explicit.
+
+### Security
+
+- Fetch discovery metadata server-side without redirects, enforce a bounded JSON response, and reject insecure or cross-origin returned endpoints.
+
 ## [0.2.15] - 2026-08-27
 
 ### Added

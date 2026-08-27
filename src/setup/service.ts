@@ -15,6 +15,20 @@ export const setupInputSchema = z.object({
 });
 export type SetupInput = z.infer<typeof setupInputSchema>;
 
+export const authentikDiscoveryInputSchema = z.object({
+  baseUrl: z.url(),
+  applicationSlug: z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/,
+    'Authentik application slug may only contain letters, numbers, underscores, and hyphens.')
+});
+
+const authentikDiscoverySchema = z.object({
+  issuer: z.url(),
+  authorization_endpoint: z.url(),
+  token_endpoint: z.url(),
+  jwks_uri: z.url(),
+  userinfo_endpoint: z.url().optional()
+});
+
 export class SetupService {
   constructor(private readonly authEnabled: boolean, private readonly database: Database, private readonly settings: SettingsRepository) {}
 
@@ -24,6 +38,37 @@ export class SetupService {
     const migrations = await this.database.query<{ name: string; applied_at: string }>('SELECT name,applied_at FROM schema_migrations ORDER BY name');
     return { database: 'ok', authEnabled: this.authEnabled, postgresVersion: version.rows[0].version,
       pgvectorVersion: vector.rows[0]?.extversion ?? null, migrations: migrations.rows };
+  }
+
+  async discoverAuthentik(input: z.infer<typeof authentikDiscoveryInputSchema>) {
+    if (!this.authEnabled) throw new Error('Authentik discovery is unavailable when AUTH=false.');
+    const parsed = authentikDiscoveryInputSchema.parse(input);
+    const base = new URL(parsed.baseUrl);
+    if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/' || base.search || base.hash) {
+      throw new Error('Authentik address must be an HTTPS origin without credentials, path, query, or fragment.');
+    }
+    const discoveryUrl = new URL(`/application/o/${encodeURIComponent(parsed.applicationSlug)}/.well-known/openid-configuration`, base);
+    const response = await fetch(discoveryUrl, {
+      headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(10_000)
+    });
+    if (!response.ok) throw new Error(`Authentik discovery request failed (${response.status}).`);
+    const raw = await readBoundedText(response, 1_000_000);
+    let decoded: unknown;
+    try { decoded = JSON.parse(raw); }
+    catch { throw new Error('Authentik discovery response is not valid JSON.'); }
+    const metadata = authentikDiscoverySchema.parse(decoded);
+    for (const value of [metadata.issuer, metadata.authorization_endpoint, metadata.token_endpoint,
+      metadata.jwks_uri, metadata.userinfo_endpoint].filter(Boolean) as string[]) {
+      const endpoint = new URL(value);
+      if (endpoint.protocol !== 'https:' || endpoint.origin !== base.origin) {
+        throw new Error('Authentik discovery returned an insecure or cross-origin endpoint.');
+      }
+    }
+    return {
+      discoveryUrl: discoveryUrl.toString(), issuer: metadata.issuer, jwksUri: metadata.jwks_uri,
+      authorizationUrl: metadata.authorization_endpoint, tokenUrl: metadata.token_endpoint,
+      userinfoUrl: metadata.userinfo_endpoint
+    };
   }
 
   async testAuthentik(authentik: NonNullable<SetupInput['authentik']>) {
@@ -64,4 +109,24 @@ export class SetupService {
       openaiCompatible: input.openaiCompatible, ollama: input.ollama
     });
   }
+}
+
+async function readBoundedText(response: Response, limit: number): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) throw new Error('Authentik discovery response is too large.');
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let output = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error('Authentik discovery response is too large.');
+      output += decoder.decode(value, { stream: true });
+    }
+    return output + decoder.decode();
+  } finally { await reader.cancel().catch(() => undefined); }
 }

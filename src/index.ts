@@ -18,7 +18,7 @@ import { JobRepository } from './jobs/repository.js';
 import { BackgroundWorker } from './jobs/worker.js';
 import { createServer } from './tools.js';
 import { setupPage, setupScript } from './setup/page.js';
-import { SetupService, setupInputSchema } from './setup/service.js';
+import { authentikDiscoveryInputSchema, SetupService, setupInputSchema } from './setup/service.js';
 import { SettingsRepository } from './settings/repository.js';
 import { WebSessionService } from './web/session.js';
 import type { WebIdentity } from './web/session.js';
@@ -84,6 +84,15 @@ app.get('/assets/setup.js', context => context.body(setupScript, 200, {
 app.get('/api/setup/status', async context => context.json({ ...(await settings.installation()), authEnabled: baseConfig.authEnabled }));
 app.use('/api/setup/*', setupGuard);
 app.get('/api/setup/diagnostics', async context => context.json(await setup.diagnostics()));
+app.post('/api/setup/discover-authentik', async context => {
+  try {
+    const body = authentikDiscoveryInputSchema.parse(await context.req.json());
+    return context.json(await setup.discoverAuthentik(body));
+  } catch (error) {
+    return context.json({ error: 'authentik_discovery_failed',
+      error_description: error instanceof Error ? error.message : 'Authentik discovery failed.' }, 400);
+  }
+});
 app.post('/api/setup/test-authentik', async context => {
   try {
     if (!baseConfig.authEnabled) return context.json({ status: 'skipped', authEnabled: false });

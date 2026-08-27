@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.15
+ghcr.io/guyao146/sakura-mcp-server:0.2.16
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +351,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.15
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.16
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -449,6 +449,21 @@ auth=false
 2. `AUTH=true` 时配置并测试 Authentik Issuer、Audience、JWKS 和首位管理员邮箱；`AUTH=false` 时自动跳过；
 3. 可选配置并测试 OpenAI-compatible 或 Ollama；
 4. 确认配置加密密钥已备份，完成安装并锁定向导。
+
+`AUTH=true` 的 Authentik 步骤支持 OpenID Connect 自动发现。只需填写：
+
+```text
+Authentik 地址：https://login.example.com
+应用名称（Application Slug）：sakura-mcp
+```
+
+向导在停止输入约 600ms 后自动由服务端请求：
+
+```text
+https://login.example.com/application/o/sakura-mcp/.well-known/openid-configuration
+```
+
+并回填 Issuer、JWKS URI、Authorization URL、Token URL 和 UserInfo URL；也可以点击“获取 OpenID 配置”手动重试。基础地址必须是无路径、无凭据的 HTTPS 根地址，Slug 只允许字母、数字、下划线和连字符。OIDC discovery 不包含部署专属的 Audience 和 Client ID，这两项仍需按 Authentik Provider 配置手动填写。
 
 安装完成前：
 
@@ -561,7 +576,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.15`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.16`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 
