@@ -87,12 +87,22 @@ describe('memory database schema', () => {
     expect(nginx).toContain('location = /assets/setup.js');
     expect(nginx).toContain('location ^~ /api/setup/');
     expect(nginx).toContain('proxy_pass http://127.0.0.1:3001;');
+    expect(nginx).toMatch(/location = \/ \{[\s\S]*?proxy_read_timeout 120s;[\s\S]*?proxy_buffering off;/);
+    expect(nginx).toContain('location = /.well-known/oauth-protected-resource {');
   });
 
   it('keeps management APIs unavailable until installation completes', async () => {
     const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
     expect(source).toContain("app.use('/api/admin/*', async (context, next)");
     expect(source).toContain("error: 'setup_required'");
+  });
+
+  it('serves MCP on the root domain while retaining the legacy path', async () => {
+    const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(source).toContain("app.all('/', async context => isRootMcpRequest");
+    expect(source).toContain("app.all('/mcp', handleMcp)");
+    expect(source).toContain('resource: config.publicBaseUrl');
+    expect(source).toContain('resource: `${config.publicBaseUrl}/mcp`');
   });
 
   it('indexes security audit actions and request correlation', async () => {

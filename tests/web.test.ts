@@ -35,6 +35,11 @@ describe('Web management security', () => {
     }
   });
 
+  it('uses the root domain as the preferred MCP URL', () => {
+    expect(adminPage).toContain("$('mcpUrl').textContent=location.origin");
+    expect(adminPage).not.toContain("$('mcpUrl').textContent=location.origin+'/mcp'");
+  });
+
   it('shows the running version and update controls', () => {
     for (const marker of ['当前版本', '版本更新', '检查更新', '/api/admin/version', 'headerVersion']) {
       expect(adminPage).toContain(marker);

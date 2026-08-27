@@ -321,7 +321,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.17
+ghcr.io/guyao146/sakura-mcp-server:0.2.18
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +351,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.17
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.18
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -436,7 +436,7 @@ auth=false
 
 - 安装向导自动跳过 Authentik 配置和连接测试；
 - `/admin` 无需登录，使用稳定的 `Local Administrator` 系统管理员身份；
-- `/mcp` 无需 Bearer Token，使用同一本地身份和完整 scopes；
+- 根域名和兼容地址 `/mcp` 均无需 Bearer Token，使用同一本地身份和完整 scopes；
 - 管理写请求仍使用 CSRF Token；
 - 管理后台会永久显示红色安全警告；
 - 任何能连接该站点的人都拥有完整管理和记忆访问权限。
@@ -470,7 +470,7 @@ https://login.example.com/application/o/sakura-mcp/.well-known/openid-configurat
 - `/setup` 可打开安装页面；
 - Setup API 无需安装 Token，但仍受独立频率限制；
 - 建议在反向代理中临时限制 `/setup` 和 `/api/setup/` 的来源 IP，直到安装完成；
-- `/mcp` 返回 `503 setup_required`，不会在未配置身份系统时对外提供记忆能力。
+- 根域名的 MCP 请求和 `/mcp` 均返回 `503 setup_required`，不会在未完成安装时对外提供记忆能力。
 
 安装完成后：
 
@@ -542,8 +542,16 @@ CI 还会运行 `npm audit --omit=dev --audit-level=high` 作为阻塞式依赖�
 MCP URL：
 
 ```text
+https://mcp.example.com
+```
+
+旧客户端仍可继续使用兼容地址：
+
+```text
 https://mcp.example.com/mcp
 ```
+
+根路径会按请求类型自动分流：普通浏览器 `GET /` 跳转到安装向导或管理后台；MCP 的 POST、DELETE、SSE GET，以及携带 MCP Header 或 Authorization 的请求会直接进入 Streamable HTTP MCP 处理器。
 
 API Key 客户端使用：
 
@@ -551,9 +559,15 @@ API Key 客户端使用：
 Authorization: Bearer <每个 Agent 独立的密钥>
 ```
 
-`AUTH=false` 时 `/mcp` 不需要 Authorization Header，并统一使用本地管理员身份；这等同于向所有网络访问者开放完整权限，因此只允许在受访问控制的私有网络使用。
+`AUTH=false` 时根域名和 `/mcp` 都不需要 Authorization Header，并统一使用本地管理员身份；这等同于向所有网络访问者开放完整权限，因此只允许在受访问控制的私有网络使用。
 
-支持 OAuth 的客户端通过 RFC 9728 元数据发现 Authentik：
+支持 OAuth 的客户端通过 RFC 9728 元数据发现 Authentik。根域名推荐地址为：
+
+```text
+/.well-known/oauth-protected-resource
+```
+
+兼容 `/mcp` 的旧元数据地址为：
 
 ```text
 /.well-known/oauth-protected-resource/mcp
@@ -576,7 +590,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.17`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.18`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 

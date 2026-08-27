@@ -2,6 +2,14 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.18] - 2026-08-27
+
+### Added
+
+- Accept MCP Streamable HTTP requests directly on the public root URL while retaining `/mcp` as a compatible endpoint.
+- Route ordinary browser root requests to setup/admin and detect MCP requests by method, SSE Accept header, authorization, protocol version, or session headers.
+- Publish RFC 9728 protected-resource metadata for both the root and legacy MCP resource URLs.
+
 ## [0.2.17] - 2026-08-27
 
 ### Changed

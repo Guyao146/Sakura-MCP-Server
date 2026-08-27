@@ -44,6 +44,8 @@ describe('installation security', () => {
     expect(setupScript).toContain("api('discover-authentik',{baseUrl,applicationSlug})");
     expect(setupScript).toContain('setTimeout(()=>void discoverAuthentik(false),600)');
     expect(setupScript).toContain('requestId!==discoveryRequestId');
+    expect(setupScript).toContain("MCP URL：'+location.origin");
+    expect(setupScript).toContain("兼容地址：'+location.origin+'/mcp'");
     for (const field of ['issuer','jwksUri','authorizationUrl','tokenUrl','userinfoUrl']) {
       expect(setupScript).toContain(`$('${field}').value=data.${field}`);
     }

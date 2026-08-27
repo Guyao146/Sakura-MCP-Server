@@ -25,6 +25,7 @@ import type { WebIdentity } from './web/session.js';
 import { adminPage } from './web/admin-page.js';
 import { RateLimiter, securityHeaders } from './security/http.js';
 import { APP_VERSION, UpdateChecker } from './version.js';
+import { isRootMcpRequest } from './mcp-routing.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
@@ -55,6 +56,7 @@ const limiter = new RateLimiter();
 
 app.use('*', securityHeaders());
 app.use('/mcp', limiter.middleware('mcp', baseConfig.security.mcpPerMinute, baseConfig.security.trustProxy));
+app.use('/', limiter.middleware('mcp-root', baseConfig.security.mcpPerMinute, baseConfig.security.trustProxy));
 app.use('/auth/*', limiter.middleware('auth', baseConfig.security.authPerMinute, baseConfig.security.trustProxy));
 app.use('/api/setup/*', limiter.middleware('setup', baseConfig.security.setupPerMinute, baseConfig.security.trustProxy));
 app.use('/api/admin/*', limiter.middleware('web', baseConfig.security.webPerMinute, baseConfig.security.trustProxy));
@@ -76,7 +78,9 @@ const setupGuard = async (context: Context, next: Next) => {
   await next();
 };
 
-app.get('/', async context => context.redirect((await settings.installation()).completed ? '/admin' : '/setup'));
+app.all('/', async context => isRootMcpRequest(context.req.method, context.req.raw.headers)
+  ? handleMcp(context)
+  : context.redirect((await settings.installation()).completed ? '/admin' : '/setup'));
 app.get('/setup', context => context.html(setupPage));
 app.get('/assets/setup.js', context => context.body(setupScript, 200, {
   'Content-Type': 'application/javascript; charset=UTF-8', 'Cache-Control': 'no-store'
@@ -339,17 +343,25 @@ app.get('/health', async context => {
       database: 'unavailable', authEnabled: config.authEnabled }, 503);
   }
 });
+app.get('/.well-known/oauth-protected-resource', context => {
+  if (!config.authentik) return context.json({ error: 'Authentik OAuth is not configured.' }, 404);
+  return context.json({ resource: config.publicBaseUrl, authorization_servers: [config.authentik.issuer] });
+});
 app.get('/.well-known/oauth-protected-resource/mcp', context => {
   if (!config.authentik) return context.json({ error: 'Authentik OAuth is not configured.' }, 404);
   return context.json({ resource: `${config.publicBaseUrl}/mcp`, authorization_servers: [config.authentik.issuer] });
 });
-app.all('/mcp', async context => {
+app.all('/mcp', handleMcp);
+
+async function handleMcp(context: Context): Promise<Response> {
   if (!(await settings.installation()).completed) return context.json({ error: 'setup_required', error_description: 'Complete installation at /setup first.' }, 503);
   let principal;
   try { principal = await auth.authenticate(context.req.header('authorization')); }
   catch (error) {
     const message = error instanceof Error ? error.message : 'Unauthorized.';
-    return context.json({ error: 'unauthorized', error_description: message }, 401, { 'WWW-Authenticate': `Bearer resource_metadata="${config.publicBaseUrl}/.well-known/oauth-protected-resource/mcp"` });
+    const metadataPath = context.req.path === '/' ? '/.well-known/oauth-protected-resource' : '/.well-known/oauth-protected-resource/mcp';
+    return context.json({ error: 'unauthorized', error_description: message }, 401,
+      { 'WWW-Authenticate': `Bearer resource_metadata="${config.publicBaseUrl}${metadataPath}"` });
   }
   const server = createServer(database, principal, audit, () => config);
   // Stateless transport prevents one authenticated client's session from being reused by another principal.
@@ -358,7 +370,7 @@ app.all('/mcp', async context => {
   try { return await transport.handleRequest(context.req.raw, { parsedBody: context.get('parsedBody' as never) as unknown }); }
   catch (error) { logger.error({ err: error, principal: principal.id }, 'MCP transport request failed'); return context.json({ error: 'MCP request failed.' }, 500); }
   finally { await transport.close(); }
-});
+}
 
 serve({ fetch: app.fetch, hostname: baseConfig.host, port: baseConfig.port }, info => logger.info({ host: baseConfig.host, port: info.port }, 'Sakura MCP Server listening'));
 
