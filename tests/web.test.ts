@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Script } from 'node:vm';
 import { loadConfig } from '../src/config.js';
 import { adminPage } from '../src/web/admin-page.js';
+import { loginPage } from '../src/web/login-page.js';
 import { describeTokenExchangeFailure, WebSessionService, type WebIdentity } from '../src/web/session.js';
 
 const config = loadConfig({
@@ -114,6 +115,25 @@ describe('Web management security', () => {
     expect(derived.pathname).toBe('/application/o/sakura-mcp/end-session/');
     expect(derived.searchParams.get('post_logout_redirect_uri')).toBe('https://mcp.example.com/auth/login');
     expect(new WebSessionService({} as never, () => config).endSessionUrl()).toBeUndefined();
+  });
+
+  it('renders a branded login landing page that never auto-starts the OIDC redirect', () => {
+    for (const marker of ['使用 Authentik 登录', '本站使用 Authentik 单点登录', '/auth/start', 'id="notice"']) {
+      expect(loginPage).toContain(marker);
+    }
+    expect(loginPage).not.toContain('${');
+    expect(loginPage).not.toContain('location.href=');
+    expect(loginPage).not.toContain('innerHTML');
+    expect(loginPage).toContain('box.textContent=notice');
+  });
+
+  it('keeps the login page return target on the local origin', () => {
+    const script = loginPage.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    expect(script).toBeTruthy();
+    expect(() => new Script(script!)).not.toThrow();
+    expect(script).toContain("/^\\/(?!\\/)/.test(target)?target:'/admin'");
+    expect(script).toContain("encodeURIComponent(safeTarget)");
+    for (const reason of ['expired', 'logged_out']) expect(script).toContain(`${reason}:`);
   });
 
   it('contains syntactically valid browser JavaScript', () => {

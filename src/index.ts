@@ -23,6 +23,7 @@ import { SettingsRepository } from './settings/repository.js';
 import { WebSessionService } from './web/session.js';
 import type { WebIdentity } from './web/session.js';
 import { adminPage } from './web/admin-page.js';
+import { loginPage } from './web/login-page.js';
 import { RateLimiter, securityHeaders } from './security/http.js';
 import { APP_VERSION, UpdateChecker } from './version.js';
 import { isRootMcpRequest } from './mcp-routing.js';
@@ -128,6 +129,11 @@ app.post('/api/setup/complete', async context => {
 app.get('/auth/login', async context => {
   if (!(await settings.installation()).completed) return context.redirect('/setup');
   if (!config.authEnabled) return context.redirect('/admin');
+  return context.html(loginPage);
+});
+app.get('/auth/start', async context => {
+  if (!(await settings.installation()).completed) return context.redirect('/setup');
+  if (!config.authEnabled) return context.redirect('/admin');
   try { return context.redirect(await webSessions.begin(context.req.query('return_to') ?? '/admin')); }
   catch (error) { return context.json({ error: 'login_failed', error_description: error instanceof Error ? error.message : 'Login failed.' }, 500); }
 });
@@ -157,7 +163,7 @@ app.post('/auth/logout', async context => {
     await webSessions.logout(token);
     await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action: 'auth.logout', result: 'success' });
     context.header('Set-Cookie', webSessions.clearCookie());
-    return context.json({ loggedOut: true, redirectTo: webSessions.endSessionUrl() ?? '/auth/login' });
+    return context.json({ loggedOut: true, redirectTo: webSessions.endSessionUrl() ?? '/auth/login?reason=logged_out' });
   } catch (error) {
     return context.json({ error: 'unauthorized', error_description: error instanceof Error ? error.message : 'Unauthorized.' }, 401);
   }

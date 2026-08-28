@@ -333,7 +333,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.24
+ghcr.io/guyao146/sakura-mcp-server:0.2.25
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -363,7 +363,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.24
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.25
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -503,6 +503,8 @@ https://mcp.example.com/auth/callback
 https://mcp.example.com/auth/login
 ```
 
+该地址渲染 Sakura 登录页，点击「使用 Authentik 登录」后由 `/auth/start` 发起授权码 + PKCE 流程；这样退出后不会因 SSO Cookie 仍然有效而被立即静默登录。
+
 浏览器会话 Cookie 使用 `HttpOnly`、`SameSite=Lax`，HTTPS 部署下同时使用 `Secure`；数据库只保存 Session Token 的 SHA-256 哈希。退出登录后会话立即撤销，并按 OIDC RP-Initiated Logout 跳转 Authentik 的 `end_session_endpoint` 同步结束 SSO 会话，因此还需在同一个 Provider 中把登录入口注册为 post-logout redirect URI：
 
 ```text
@@ -620,7 +622,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.24`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.25`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 
