@@ -13,7 +13,7 @@ export class OpenAICompatibleProvider implements AiProvider {
   async embed(texts: string[], model = this.embeddingModel): Promise<number[][]> {
     if (!model) throw new Error('OpenAI-compatible embedding model is not configured.');
     const response = await fetch(`${this.baseUrl}/embeddings`, { method: 'POST', headers: this.headers(), body: JSON.stringify({ model, input: texts }), signal: AbortSignal.timeout(60_000) });
-    if (!response.ok) throw new Error(`Embedding request failed (${response.status}).`);
+    if (!response.ok) throw new Error(`Embedding request failed (${response.status})${await describeUpstreamError(response)}.`);
     const body = await response.json() as { data: Array<{ index: number; embedding: number[] }> };
     return body.data.sort((a,b) => a.index-b.index).map(item => item.embedding);
   }
@@ -24,8 +24,25 @@ export class OpenAICompatibleProvider implements AiProvider {
         { role: 'system', content: 'Extract only durable, useful long-term memories. Return JSON: {"memories":[{"type":"fact|preference|event|task|person|project|summary|document|idea|other","content":"...","summary":"...","tags":[],"importance":0.5,"confidence":0.8}]}. Do not invent facts.' },
         { role: 'user', content: text }
       ] }), signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`Memory extraction request failed (${response.status}).`);
+    if (!response.ok) throw new Error(`Memory extraction request failed (${response.status})${await describeUpstreamError(response)}.`);
     const body = await response.json() as { choices: Array<{ message: { content: string } }> };
     return extractedSchema.parse(JSON.parse(body.choices[0]?.message.content ?? '{}')).memories;
   }
+}
+
+async function describeUpstreamError(response: Response): Promise<string> {
+  let raw = '';
+  try { raw = (await response.text()).slice(0, 500); }
+  catch { return ''; }
+  if (!raw.trim()) return '';
+  let detail = raw;
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown; message?: unknown };
+    const err = parsed.error;
+    const message = typeof err === 'string' ? err
+      : err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string' ? (err as { message: string }).message
+      : typeof parsed.message === 'string' ? parsed.message : undefined;
+    if (message) detail = message;
+  } catch { /* keep raw text */ }
+  return `：${detail.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)}`;
 }

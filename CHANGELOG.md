@@ -2,6 +2,13 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.22] - 2026-08-27
+
+### Added
+
+- Add a dedicated Embedding provider so vector generation can point at a different OpenAI-compatible endpoint (separate base URL, API key, and model) from the Chat provider, configurable in the setup wizard and the admin console. New `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL` environment defaults are also supported.
+- Surface upstream OpenAI-compatible error bodies in embedding and memory-extraction failures instead of only the HTTP status code, making 4xx causes such as unsupported embedding models easier to diagnose.
+
 ## [0.2.21] - 2026-08-27
 
 ### Fixed

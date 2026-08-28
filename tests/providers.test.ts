@@ -32,4 +32,12 @@ describe('AI providers', () => {
     const provider = new OpenAICompatibleProvider('https://api.example.com/v1', undefined, 'chat-model');
     await expect(provider.extractMemories('input')).rejects.toThrow();
   });
+
+  it('includes the upstream error body when an embedding request fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { message: 'model not allowed for this key' }
+    }), { status: 403, headers: { 'Content-Type': 'application/json' } })));
+    const provider = new OpenAICompatibleProvider('https://api.example.com/v1', 'secret', undefined, 'embed-model');
+    await expect(provider.embed(['x'])).rejects.toThrow('model not allowed for this key');
+  });
 });

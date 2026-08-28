@@ -40,6 +40,12 @@ describe('Web management security', () => {
       '签发者地址（Issuer）', '令牌受众（Audience）', '系统管理员邮箱']) expect(adminPage).toContain(marker);
   });
 
+  it('provides a dedicated embedding provider form separate from chat', () => {
+    for (const marker of ['独立向量服务（Embedding）', 'emBase', 'emKey', 'emModel', "saveProvider('embedding')"]) {
+      expect(adminPage).toContain(marker);
+    }
+  });
+
   it('uses the root domain as the preferred MCP URL', () => {
     expect(adminPage).toContain("$('mcpUrl').textContent=location.origin");
     expect(adminPage).not.toContain("$('mcpUrl').textContent=location.origin+'/mcp'");

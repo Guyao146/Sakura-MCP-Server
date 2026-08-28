@@ -107,7 +107,7 @@ app.post('/api/setup/test-authentik', async context => {
 });
 app.post('/api/setup/test-provider', async context => {
   try {
-    const body = setupInputSchema.pick({ openaiCompatible: true, ollama: true }).parse(await context.req.json());
+    const body = setupInputSchema.pick({ openaiCompatible: true, ollama: true, embedding: true }).parse(await context.req.json());
     return context.json(await setup.testProvider(body));
   } catch (error) { return context.json({ error: 'provider_test_failed', error_description: error instanceof Error ? error.message : 'Provider test failed.' }, 400); }
 });
@@ -302,12 +302,23 @@ app.get('/api/admin/providers', async context => adminApi(context, false, async 
     openaiCompatible: config.openaiCompatible ? { configured: true, baseUrl: config.openaiCompatible.baseUrl,
       chatModel: config.openaiCompatible.chatModel, embeddingModel: config.openaiCompatible.embeddingModel, hasApiKey: Boolean(config.openaiCompatible.apiKey) } : { configured: false },
     ollama: config.ollama ? { configured: true, baseUrl: config.ollama.baseUrl,
-      chatModel: config.ollama.chatModel, embeddingModel: config.ollama.embeddingModel } : { configured: false }
+      chatModel: config.ollama.chatModel, embeddingModel: config.ollama.embeddingModel } : { configured: false },
+    embedding: config.embedding ? { configured: true, baseUrl: config.embedding.baseUrl,
+      model: config.embedding.model, hasApiKey: Boolean(config.embedding.apiKey) } : { configured: false }
   };
 }));
 app.put('/api/admin/providers/:kind', async context => adminApi(context, true, async identity => {
   if (!identity.isSystemAdmin) throw new Error('System administrator permission is required.');
-  const kind = z.enum(['openai_compatible', 'ollama']).parse(context.req.param('kind'));
+  const kind = z.enum(['openai_compatible', 'ollama', 'embedding']).parse(context.req.param('kind'));
+  if (kind === 'embedding') {
+    const body = z.object({ baseUrl: z.url(), apiKey: z.string().max(1000).optional(), model: z.string().max(200).optional() }).parse(await context.req.json());
+    if (!body.apiKey && config.embedding?.apiKey) body.apiKey = config.embedding.apiKey;
+    if (body.model) await setup.testProvider({ embedding: { baseUrl: body.baseUrl.replace(/\/$/, ''), apiKey: body.apiKey, model: body.model } });
+    await settings.saveProvider('embedding', { baseUrl: body.baseUrl.replace(/\/$/, ''), apiKey: body.apiKey, model: body.model });
+    config = await settings.apply(baseConfig);
+    auth = new AuthService(config, database);
+    return { saved: true };
+  }
   const body = z.object({ baseUrl: z.url(), apiKey: z.string().max(1000).optional(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).parse(await context.req.json());
   if (kind === 'openai_compatible' && !body.apiKey && config.openaiCompatible?.apiKey) body.apiKey = config.openaiCompatible.apiKey;
   await settings.saveProvider(kind, { baseUrl: body.baseUrl.replace(/\/$/, ''), apiKey: kind === 'openai_compatible' ? body.apiKey : undefined,

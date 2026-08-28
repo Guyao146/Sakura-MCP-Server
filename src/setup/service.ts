@@ -13,7 +13,8 @@ export const setupInputSchema = z.object({
   administratorEmail: z.email().optional(),
   authentik: authentikConfigSchema.optional(),
   openaiCompatible: z.object({ baseUrl: z.url(), apiKey: z.string().max(1000).optional(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).optional(),
-  ollama: z.object({ baseUrl: z.url(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).optional()
+  ollama: z.object({ baseUrl: z.url(), chatModel: z.string().max(200).optional(), embeddingModel: z.string().max(200).optional() }).optional(),
+  embedding: z.object({ baseUrl: z.url(), apiKey: z.string().max(1000).optional(), model: z.string().max(200).optional() }).optional()
 });
 export type SetupInput = z.infer<typeof setupInputSchema>;
 
@@ -120,7 +121,13 @@ export class SetupService {
     throw new Error(`Authentik Public Client 预检失败（HTTP ${response.status}）${code ? `：${code}` : ''}${description ? `：${description}` : ''}。`);
   }
 
-  async testProvider(input: Pick<SetupInput, 'openaiCompatible' | 'ollama'>) {
+  async testProvider(input: Pick<SetupInput, 'openaiCompatible' | 'ollama' | 'embedding'>) {
+    if (input.embedding) {
+      if (!input.embedding.model) throw new Error('Embedding model is required to test the embedding endpoint.');
+      const provider = new OpenAICompatibleProvider(input.embedding.baseUrl.replace(/\/$/, ''), input.embedding.apiKey, undefined, input.embedding.model);
+      await provider.embed(['Sakura-MCP-Server installation test']);
+      return { provider: 'embedding', status: 'ok', embeddingTested: true };
+    }
     if (input.openaiCompatible) {
       const provider = new OpenAICompatibleProvider(input.openaiCompatible.baseUrl.replace(/\/$/, ''), input.openaiCompatible.apiKey, input.openaiCompatible.chatModel, input.openaiCompatible.embeddingModel);
       if (input.openaiCompatible.embeddingModel) await provider.embed(['Sakura-MCP-Server installation test']);
@@ -140,7 +147,7 @@ export class SetupService {
     }
     if (this.authEnabled && input.authentik) await this.testAuthentik(input.authentik);
     await this.settings.complete(this.authEnabled ? input : {
-      openaiCompatible: input.openaiCompatible, ollama: input.ollama
+      openaiCompatible: input.openaiCompatible, ollama: input.ollama, embedding: input.embedding
     });
   }
 }

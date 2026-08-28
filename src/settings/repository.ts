@@ -30,18 +30,21 @@ export class SettingsRepository {
     const authentik = base.authEnabled ? await this.get<AppConfig['authentik']>('authentik') : undefined;
     const openaiCompatible = await this.get<AppConfig['openaiCompatible']>('provider.openai_compatible');
     const ollama = await this.get<AppConfig['ollama']>('provider.ollama');
+    const embedding = await this.get<AppConfig['embedding']>('provider.embedding');
     return { ...base, authentik: base.authEnabled ? authentik ?? base.authentik : undefined,
-      openaiCompatible: openaiCompatible ?? base.openaiCompatible, ollama: ollama ?? base.ollama };
+      openaiCompatible: openaiCompatible ?? base.openaiCompatible, ollama: ollama ?? base.ollama,
+      embedding: embedding ?? base.embedding };
   }
 
-  async saveProvider(kind: 'openai_compatible' | 'ollama', value: AppConfig['openaiCompatible'] | AppConfig['ollama']): Promise<void> {
+  async saveProvider(kind: 'openai_compatible' | 'ollama' | 'embedding', value: AppConfig['openaiCompatible'] | AppConfig['ollama'] | AppConfig['embedding']): Promise<void> {
     if (!value) throw new Error('Provider configuration is required.');
     const key = `provider.${kind}`;
-    const stored = kind === 'openai_compatible' ? this.cipher.encrypt(value) : value;
+    const encrypted = kind === 'openai_compatible' || kind === 'embedding';
+    const stored = encrypted ? this.cipher.encrypt(value) : value;
     await this.database.query(
       `INSERT INTO system_settings(key,value,encrypted) VALUES($1,$2,$3)
        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,encrypted=EXCLUDED.encrypted,updated_at=now()`,
-      [key, stored, kind === 'openai_compatible']);
+      [key, stored, encrypted]);
   }
 
   async saveAuthentik(value: NonNullable<AppConfig['authentik']>, administratorEmail: string): Promise<void> {
@@ -65,6 +68,7 @@ export class SettingsRepository {
     authentik?: NonNullable<AppConfig['authentik']>;
     openaiCompatible?: AppConfig['openaiCompatible'];
     ollama?: AppConfig['ollama'];
+    embedding?: AppConfig['embedding'];
   }): Promise<void> {
     const client = await this.database.pool.connect();
     try {
@@ -79,6 +83,7 @@ export class SettingsRepository {
       else await client.query("DELETE FROM system_settings WHERE key='authentik'");
       if (input.openaiCompatible) await put('provider.openai_compatible', input.openaiCompatible, true);
       if (input.ollama) await put('provider.ollama', input.ollama, false);
+      if (input.embedding) await put('provider.embedding', input.embedding, true);
       if (input.administratorEmail) {
         await client.query('INSERT INTO system_admin_allowlist(email) VALUES(lower($1)) ON CONFLICT(email) DO NOTHING', [input.administratorEmail]);
       }

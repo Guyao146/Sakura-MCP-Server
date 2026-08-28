@@ -4,7 +4,7 @@ import type { Database } from '../database.js';
 import { requireSpaceRole } from '../memory/permissions.js';
 import { MemoryRepository } from '../memory/repository.js';
 import type { MemoryRecord, RememberInput } from '../memory/types.js';
-import { createProvider, type ProviderKind, type ResolvedProvider } from '../providers/factory.js';
+import { createProvider, createEmbeddingProvider, type ProviderKind, type ResolvedProvider } from '../providers/factory.js';
 import type { ExtractedMemory } from '../providers/types.js';
 import { MemoryGovernanceService } from '../governance/service.js';
 
@@ -165,6 +165,10 @@ export class SemanticMemoryService {
 
   private async resolve(userId: string, spaceId: string, capability: 'chat'|'embedding'): Promise<ResolvedProvider | undefined> {
     const strategy = await this.strategy(userId, spaceId);
+    if (capability === 'embedding' && !strategy.provider_type && !strategy.privacy_mode) {
+      const dedicated = createEmbeddingProvider(this.getConfig(), { embeddingModel: strategy.embedding_model ?? undefined });
+      if (dedicated?.embeddingModel) return dedicated;
+    }
     let kind = strategy.provider_type;
     if (!kind) {
       if (strategy.privacy_mode) kind = this.getConfig().ollama ? 'ollama' : null;

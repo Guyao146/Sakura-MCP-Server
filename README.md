@@ -1,4 +1,4 @@
-# Sakura-MCP-Server
+﻿# Sakura-MCP-Server
 
 **Sakura-MCP-Server** 是面向所有兼容 MCP 的 AI Agent 的多用户长期记忆平台。Claude、Cline、Cursor、Windsurf 及其他 Agent 可以在经过授权后，把事实、偏好、人物、事件、任务、项目、文档摘要和对话结论写入同一个可治理的记忆库，并在未来的会话中召回。
 
@@ -153,6 +153,18 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 OLLAMA_CHAT_MODEL=
 OLLAMA_EMBEDDING_MODEL=
 ```
+
+### 独立向量服务（Embedding）
+
+当对话中转站不提供 `/embeddings` 时，可单独配置一个 OpenAI-compatible 向量服务。它拥有独立的 Base URL、API Key 和模型，与对话 Provider 完全分离。配置后向量优先走此服务，对话继续走原 Provider：
+
+```dotenv
+EMBEDDING_BASE_URL=https://vectors.example.com/v1
+EMBEDDING_API_KEY=
+EMBEDDING_MODEL=
+```
+
+也可以在安装向导的“AI 模型服务”步骤或管理后台“模型 Provider”页面单独填写和测试。留空则沿用对话 Provider 生成向量。
 
 每个空间最终可独立选择 Provider、模型和是否启用自动提取。更换 embedding 模型时通过后台任务重新生成向量；模型调用失败不丢失原始记忆。
 
@@ -321,7 +333,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.21
+ghcr.io/guyao146/sakura-mcp-server:0.2.22
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -351,7 +363,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.21
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.22
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -602,7 +614,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.21`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.22`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 

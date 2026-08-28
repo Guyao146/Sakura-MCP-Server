@@ -1,4 +1,4 @@
-name: sakura-mcp-server
+﻿name: sakura-mcp-server
 
 services:
   bootstrap-secrets:
@@ -64,7 +64,7 @@ services:
       retries: 10
 
   sakura-mcp:
-    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.21}
+    image: ${SAKURA_MCP_IMAGE:-ghcr.io/guyao146/sakura-mcp-server:0.2.22}
     container_name: sakura-mcp-server-app
     pull_policy: always
     restart: unless-stopped
@@ -88,6 +88,9 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       WORKER_ENABLED: ${WORKER_ENABLED:-true}
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-2000}
       WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-900}

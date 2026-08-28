@@ -115,6 +115,12 @@ describe('memory database schema', () => {
     expect(source).toContain("'Authentik 配置已保存。请将 AUTH 恢复为 true 并重启应用。'");
   });
 
+  it('supports a dedicated embedding provider endpoint', async () => {
+    const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(source).toContain("z.enum(['openai_compatible', 'ollama', 'embedding'])");
+    expect(source).toContain("await settings.saveProvider('embedding'");
+  });
+
   it('indexes security audit actions and request correlation', async () => {
     const sql = await readFile(new URL('../migrations/007_audit_security.sql', import.meta.url), 'utf8');
     expect(sql).toContain('auth_source text');

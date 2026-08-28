@@ -27,6 +27,9 @@ const environmentSchema = z.object({
   OLLAMA_BASE_URL: optionalUrl,
   OLLAMA_CHAT_MODEL: z.string().optional().or(z.literal('')),
   OLLAMA_EMBEDDING_MODEL: z.string().optional().or(z.literal('')),
+  EMBEDDING_BASE_URL: optionalUrl,
+  EMBEDDING_API_KEY: z.string().optional().or(z.literal('')),
+  EMBEDDING_MODEL: z.string().optional().or(z.literal('')),
   WORKER_ENABLED: z.enum(['true', 'false']).default('true'),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60000).default(2000),
   WORKER_STALE_AFTER_SECONDS: z.coerce.number().int().min(30).max(86400).default(900),
@@ -53,6 +56,7 @@ export interface AppConfig {
   setup: { encryptionKey: string };
   openaiCompatible?: { baseUrl: string; apiKey?: string; chatModel?: string; embeddingModel?: string };
   ollama?: { baseUrl: string; chatModel?: string; embeddingModel?: string };
+  embedding?: { baseUrl: string; apiKey?: string; model?: string };
   worker: { enabled: boolean; pollIntervalMs: number; staleAfterSeconds: number };
   security: { trustProxy: boolean; mcpPerMinute: number; webPerMinute: number; authPerMinute: number; setupPerMinute: number };
   auditLogPath: string;
@@ -88,6 +92,7 @@ export function loadConfig(env = process.env): AppConfig {
     setup: { encryptionKey: value.CONFIG_ENCRYPTION_KEY },
     openaiCompatible: value.OPENAI_COMPATIBLE_BASE_URL ? { baseUrl: value.OPENAI_COMPATIBLE_BASE_URL.replace(/\/$/, ''), apiKey: value.OPENAI_COMPATIBLE_API_KEY || undefined, chatModel: value.OPENAI_COMPATIBLE_CHAT_MODEL || undefined, embeddingModel: value.OPENAI_COMPATIBLE_EMBEDDING_MODEL || undefined } : undefined,
     ollama: value.OLLAMA_BASE_URL ? { baseUrl: value.OLLAMA_BASE_URL.replace(/\/$/, ''), chatModel: value.OLLAMA_CHAT_MODEL || undefined, embeddingModel: value.OLLAMA_EMBEDDING_MODEL || undefined } : undefined,
+    embedding: value.EMBEDDING_BASE_URL ? { baseUrl: value.EMBEDDING_BASE_URL.replace(/\/$/, ''), apiKey: value.EMBEDDING_API_KEY || undefined, model: value.EMBEDDING_MODEL || undefined } : undefined,
     worker: { enabled: value.WORKER_ENABLED === 'true', pollIntervalMs: value.WORKER_POLL_INTERVAL_MS, staleAfterSeconds: value.WORKER_STALE_AFTER_SECONDS },
     security: { trustProxy: value.TRUST_PROXY === 'true', mcpPerMinute: value.RATE_LIMIT_MCP_PER_MINUTE,
       webPerMinute: value.RATE_LIMIT_WEB_PER_MINUTE, authPerMinute: value.RATE_LIMIT_AUTH_PER_MINUTE,

@@ -23,6 +23,14 @@ describe('loadConfig', () => {
     expect(config.ollama?.baseUrl).toBe('http://localhost:11434');
   });
 
+  it('parses a dedicated embedding endpoint independent from the chat provider', () => {
+    const config = loadConfig({ ...base, OPENAI_COMPATIBLE_BASE_URL: 'https://chat.example.com/v1',
+      EMBEDDING_BASE_URL: 'https://vectors.example.com/v1/', EMBEDDING_API_KEY: 'embed-secret', EMBEDDING_MODEL: 'bge-m3' });
+    expect(config.embedding).toEqual({ baseUrl: 'https://vectors.example.com/v1', apiKey: 'embed-secret', model: 'bge-m3' });
+    expect(config.openaiCompatible?.baseUrl).toBe('https://chat.example.com/v1');
+    expect(loadConfig({ ...base }).embedding).toBeUndefined();
+  });
+
   it('uses a stable PostgreSQL host for panel-managed Compose', () => {
     const config = loadConfig({ ...base });
     expect(config.database.host).toBe('postgres');

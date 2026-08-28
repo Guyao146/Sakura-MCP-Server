@@ -28,3 +28,11 @@ export function createProvider(config: AppConfig, kind: ProviderKind, overrides:
   return { kind, chatModel, embeddingModel,
     provider: new OllamaProvider(value.baseUrl, chatModel, embeddingModel) };
 }
+
+export function createEmbeddingProvider(config: AppConfig, overrides: { embeddingModel?: string } = {}): ResolvedProvider | undefined {
+  const value = config.embedding;
+  if (!value) return undefined;
+  const embeddingModel = overrides.embeddingModel ?? value.model;
+  return { kind: 'openai_compatible', embeddingModel,
+    provider: new OpenAICompatibleProvider(value.baseUrl, value.apiKey, undefined, embeddingModel) };
+}
