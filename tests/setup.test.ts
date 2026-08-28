@@ -43,8 +43,9 @@ describe('installation security', () => {
     expect(setupPage).not.toContain('<label>Issuer</label>');
     expect(setupPage).not.toContain('<label>Audience</label>');
     expect(setupPage).toContain('embeddingBase');
-    expect(setupPage).toContain('独立向量服务（可选）');
-    expect(setupScript).toContain("$('embeddingBase').value.trim()");
+    expect(setupPage).toContain('embeddingSameSite');
+    expect(setupPage).toContain('同一服务（同站配置）');
+    expect(setupScript).toContain("$('embeddingSameSite').checked");
     expect(setupScript).toContain("api('discover-authentik',{baseUrl,applicationSlug})");
     expect(setupScript).toContain('setTimeout(()=>void discoverAuthentik(false),600)');
     expect(setupScript).toContain('requestId!==discoveryRequestId');

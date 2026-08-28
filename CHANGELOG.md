@@ -2,6 +2,12 @@
 
 All notable changes to Sakura-MCP-Server are documented here.
 
+## [0.2.23] - 2026-08-28
+
+### Changed
+
+- Redesign the setup wizard AI model step so Chat and Embedding models are configured explicitly, with a "same service (co-located)" checkbox that toggles between one shared endpoint and a fully separate OpenAI-compatible embedding endpoint (independent base URL, API key, and model).
+
 ## [0.2.22] - 2026-08-27
 
 ### Added
