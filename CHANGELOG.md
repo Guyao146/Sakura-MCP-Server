@@ -1,236 +1,250 @@
-# Changelog
+# 更新日志
 
-All notable changes to Sakura-MCP-Server are documented here.
+本文件记录 Sakura-MCP-Server 的所有重要变更。
+
+## [0.2.24] - 2026-08-28
+
+### 新增
+
+- 支持 OIDC RP-Initiated Logout：点击后台「退出登录」时，除撤销本地 Web 会话外，还会跳转到 Authentik 的 `end_session_endpoint` 结束 SSO 会话，避免退出后立即被静默续登、又直接进入后台。安装向导的 Authentik 步骤会自动从 OpenID Configuration 回填 `end_session_endpoint`，管理后台「身份认证」表单也新增「登出地址（End Session，可选）」字段；未配置时按 Authentik 惯例回退到 `<issuer>/end-session/`。
+
+### 变更
+
+- 将更新日志（CHANGELOG）改写为中文。
+
+### 升级提示
+
+- 需在 Authentik 的 OAuth2/OIDC Provider 中把 `https://<你的 MCP 域名>/auth/login` 加入 post-logout redirect URI，否则 Authentik 会拒绝 `post_logout_redirect_uri` 参数。
 
 ## [0.2.23] - 2026-08-28
 
-### Changed
+### 变更
 
-- Redesign the setup wizard AI model step so Chat and Embedding models are configured explicitly, with a "same service (co-located)" checkbox that toggles between one shared endpoint and a fully separate OpenAI-compatible embedding endpoint (independent base URL, API key, and model).
+- 重构安装向导的 AI 模型步骤，将对话（Chat）和向量（Embedding）模型改为分别显式配置，并新增「向量与对话使用同一服务（同站配置）」勾选框：勾选时两者共用同一端点，取消勾选时切换为完全独立的 OpenAI-compatible 向量端点（独立的 Base URL、API Key 和模型）。
 
 ## [0.2.22] - 2026-08-27
 
-### Added
+### 新增
 
-- Add a dedicated Embedding provider so vector generation can point at a different OpenAI-compatible endpoint (separate base URL, API key, and model) from the Chat provider, configurable in the setup wizard and the admin console. New `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL` environment defaults are also supported.
-- Surface upstream OpenAI-compatible error bodies in embedding and memory-extraction failures instead of only the HTTP status code, making 4xx causes such as unsupported embedding models easier to diagnose.
+- 新增独立的向量（Embedding）Provider，向量生成可指向与对话 Provider 不同的 OpenAI-compatible 端点（独立的 Base URL、API Key 和模型），可在安装向导和管理后台配置。同时支持新的 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY` 和 `EMBEDDING_MODEL` 环境变量默认值。
+- 向量生成和记忆抽取失败时，在错误信息中附带上游 OpenAI-compatible 服务返回的错误内容，而非仅显示 HTTP 状态码，便于诊断诸如「不支持的向量模型」等 4xx 原因。
 
 ## [0.2.21] - 2026-08-27
 
-### Fixed
+### 修复
 
-- Align setup-page localization assertions with the current Issuer and Audience labels so CI and automated Release packaging complete successfully.
+- 使安装页面的本地化断言与当前的 Issuer、Audience 标签保持一致，让 CI 和自动化 Release 打包顺利完成。
 
 ## [0.2.20] - 2026-08-27
 
-### Added
+### 新增
 
-- Validate Authentik Public Client behavior during setup using a safe invalid-code PKCE Token Endpoint preflight; only `invalid_grant` is accepted.
-- Add system-administrator Authentik recovery APIs and a management page for testing and atomically saving identity configuration.
-- Support a documented, access-restricted `AUTH=false` recovery workflow for installations locked out by broken Authentik settings.
+- 安装阶段使用无效授权码的安全 PKCE Token Endpoint 预检来验证 Authentik Public Client 行为，仅接受 `invalid_grant`。
+- 新增系统管理员 Authentik 恢复 API 和管理页面，用于测试并事务性地保存身份认证配置。
+- 支持在文档说明的、受访问限制的 `AUTH=false` 恢复流程，用于因 Authentik 配置损坏而无法登录的实例。
 
-### Fixed
+### 修复
 
-- Prevent installation from completing when Authentik returns `invalid_client`, including Confidential Client, wrong Client ID, or unsupported authentication-method configurations.
+- 当 Authentik 返回 `invalid_client`（包括 Confidential Client、错误的 Client ID 或不支持的认证方式配置）时，阻止安装完成。
 
 ## [0.2.19] - 2026-08-27
 
-### Fixed
+### 修复
 
-- Surface bounded and sanitized Authentik OAuth token endpoint `error` and `error_description` values on callback failures.
-- Add actionable Public Client guidance for `invalid_client` and redirect URI/new-login guidance for `invalid_grant` without exposing request IDs or token response secrets.
+- 在回调失败时展示经过长度限制和净化处理的 Authentik OAuth Token Endpoint `error` 和 `error_description` 值。
+- 为 `invalid_client` 提供可操作的 Public Client 指引，为 `invalid_grant` 提供回调地址/重新登录的指引，且不泄露 request ID 或 Token 响应中的机密信息。
 
 ## [0.2.18] - 2026-08-27
 
-### Added
+### 新增
 
-- Accept MCP Streamable HTTP requests directly on the public root URL while retaining `/mcp` as a compatible endpoint.
-- Route ordinary browser root requests to setup/admin and detect MCP requests by method, SSE Accept header, authorization, protocol version, or session headers.
-- Publish RFC 9728 protected-resource metadata for both the root and legacy MCP resource URLs.
+- 支持直接在公网根地址上接收 MCP Streamable HTTP 请求，同时保留 `/mcp` 作为兼容端点。
+- 普通浏览器根请求跳转到安装/管理页面，并通过请求方法、SSE Accept 头、授权头、协议版本或会话头识别 MCP 请求。
+- 为根地址和旧版 MCP 资源地址发布 RFC 9728 protected-resource 元数据。
 
 ## [0.2.17] - 2026-08-27
 
-### Changed
+### 变更
 
-- Localize Authentik wizard labels and placeholders into Chinese while retaining standard OAuth/OIDC terms in parentheses where useful for troubleshooting.
+- 将 Authentik 向导的标签和占位文本本地化为中文，在有助于排查问题处保留括号中的标准 OAuth/OIDC 术语。
 
 ## [0.2.16] - 2026-08-27
 
-### Added
+### 新增
 
-- Add Authentik OpenID Connect discovery to the first-run wizard using an HTTPS Authentik origin and application slug.
-- Automatically fetch `/application/o/<slug>/.well-known/openid-configuration` after a short input debounce and provide a manual retry button.
-- Fill Issuer, JWKS, authorization, token and UserInfo endpoints from validated discovery metadata while leaving Audience and Client ID explicit.
+- 在首次安装向导中新增 Authentik OpenID Connect 自动发现，使用 HTTPS Authentik 地址和应用 Slug。
+- 在输入短暂防抖后自动获取 `/application/o/<slug>/.well-known/openid-configuration`，并提供手动重试按钮。
+- 从校验过的发现元数据回填 Issuer、JWKS、授权、令牌和 UserInfo 端点，Audience 和 Client ID 仍需显式填写。
 
-### Security
+### 安全
 
-- Fetch discovery metadata server-side without redirects, enforce a bounded JSON response, and reject insecure or cross-origin returned endpoints.
+- 服务端获取发现元数据时禁止重定向、限制 JSON 响应大小，并拒绝返回的不安全或跨源端点。
 
 ## [0.2.15] - 2026-08-27
 
-### Added
+### 新增
 
-- Add `AUTH=false` and lowercase `auth=false` support for explicitly access-restricted single-user deployments.
-- Skip the Authentik step in the first-run wizard when authentication is disabled.
-- Provide a stable local system administrator, personal memory space and full-scope MCP principal in no-auth mode.
-- Show the active authentication mode in health responses and the management dashboard.
+- 新增 `AUTH=false` 和小写 `auth=false` 支持，用于明确受访问限制的单用户部署。
+- 认证禁用时，在首次安装向导中跳过 Authentik 步骤。
+- 无认证模式下提供稳定的本地系统管理员、个人记忆空间和全权限 MCP 主体。
+- 在健康检查响应和管理后台中显示当前的认证模式。
 
-### Security
+### 安全
 
-- Keep authentication enabled by default. The dashboard displays a permanent warning when no-auth mode is active because every network visitor receives full administrator access.
-- Preserve CSRF validation for management write requests even when external identity authentication is disabled.
+- 认证默认保持启用。无认证模式激活时后台会显示永久警告，因为任何网络访问者都将获得完整管理员权限。
+- 即使外部身份认证被禁用，管理写请求仍保留 CSRF 校验。
 
 ## [0.2.14] - 2026-08-27
 
-### Fixed
+### 修复
 
-- Do not send `Content-Type: application/json` on GET or bodyless management requests. The MCP/Hono request parser otherwise rejected them with `HTTP 400 Invalid JSON` before the route handler ran.
-- Surface bounded plain-text upstream errors in the setup wizard and management dashboard instead of replacing them with a generic non-JSON message.
+- GET 或无请求体的管理请求不再发送 `Content-Type: application/json`。否则 MCP/Hono 请求解析器会在路由处理前以 `HTTP 400 Invalid JSON` 拒绝这些请求。
+- 在安装向导和管理后台中展示经过长度限制的上游纯文本错误，而非替换为通用的非 JSON 提示。
 
 ## [0.2.13] - 2026-08-27
 
-### Changed
+### 变更
 
-- Remove the first-run setup token requirement. Uninstalled instances enter the wizard directly and automatically run environment diagnostics; completed installations remain permanently locked.
-- Stop generating, exporting and proxying `SETUP_TOKEN` while keeping existing runtime secret volumes fully compatible.
+- 移除首次安装的 Setup Token 要求。未安装的实例直接进入向导并自动运行环境诊断；已完成的安装仍永久锁定。
+- 停止生成、导出和代理 `SETUP_TOKEN`，同时完全兼容现有的运行时密钥卷。
 
-### Added
+### 新增
 
-- Display the running version in the management dashboard and let system administrators check the latest GitHub Release.
-- Cache release checks for 15 minutes, support manual refresh, and expose one shared version constant to HTTP health, installation state and MCP server metadata.
+- 在管理后台显示当前运行版本，并允许系统管理员检查 GitHub 最新 Release。
+- Release 检查缓存 15 分钟、支持手动刷新，并向 HTTP 健康检查、安装状态和 MCP 服务元数据暴露同一个共享版本常量。
 
-### Fixed
+### 修复
 
-- Replace stale hard-coded `0.2.2` values in health responses, installation records and MCP protocol metadata.
+- 替换健康检查响应、安装记录和 MCP 协议元数据中过时的硬编码 `0.2.2` 值。
 
 ## [0.2.12] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Preserve the public `Host`, forwarded protocol and client address for every Nginx upstream route so application host validation does not reject setup requests.
-- Serve the setup wizard JavaScript as a same-origin external resource and bind actions with event listeners, keeping the wizard functional when 宝塔/Nginx applies a strict Content Security Policy.
-- Accept either a raw setup token or a pasted `SETUP_TOKEN=...` line and show explicit loading, timeout, network and HTTP status feedback.
+- 为每个 Nginx 上游路由保留公网 `Host`、转发协议和客户端地址，使应用的 Host 校验不再拒绝安装请求。
+- 将安装向导 JavaScript 作为同源外部资源提供并使用事件监听器绑定动作，在宝塔/Nginx 施加严格 Content Security Policy 时保持向导可用。
+- 接受原始 Setup Token 或粘贴的 `SETUP_TOKEN=...` 行，并显示明确的加载、超时、网络和 HTTP 状态反馈。
 
 ## [0.2.11] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Make the Compose regression test validate the versioned GHCR image pattern instead of a stale hard-coded patch tag.
+- 让 Compose 回归测试校验带版本的 GHCR 镜像模式，而非过时的硬编码 patch 标签。
 
 ## [0.2.10] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Add visible loading and 15-second timeout feedback to the installation environment check.
-- Explicitly forward `X-Setup-Token` through the Nginx setup API proxy.
+- 为安装环境检查添加可见的加载状态和 15 秒超时反馈。
+- 在 Nginx 安装 API 代理中显式转发 `X-Setup-Token`。
 
 ## [0.2.9] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Use host port 3001 by default so the service does not conflict with LibreChat on host port 3000.
-- Keep the internal application port at 3000 and make the host port configurable with `MCP_HOST_PORT`.
+- 默认使用宿主机端口 3001，避免与占用宿主机 3000 端口的 LibreChat 冲突。
+- 保持容器内部应用端口为 3000，并通过 `MCP_HOST_PORT` 使宿主机端口可配置。
 
 ## [0.2.8] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Use a stable PostgreSQL container hostname from the application entrypoint in Portainer/宝塔 Compose deployments.
-- Keep PostgreSQL DNS retry behavior while avoiding reliance on the transient Compose service alias alone.
+- 在 Portainer/宝塔 Compose 部署中，从应用入口使用稳定的 PostgreSQL 容器主机名。
+- 保留 PostgreSQL DNS 重试行为，同时避免仅依赖临时的 Compose 服务别名。
 
 ## [0.2.7] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Align the Compose regression test and production image tag after the no-`.env` bootstrap and PostgreSQL retry fixes.
+- 在完成无 `.env` bootstrap 和 PostgreSQL 重试修复后，对齐 Compose 回归测试和生产镜像标签。
 
 ## [0.2.6] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Publish the no-`.env` Compose bootstrap and PostgreSQL startup-retry fixes with the final aligned Compose regression test.
+- 发布无 `.env` Compose bootstrap 和 PostgreSQL 启动重试修复，并附带最终对齐的 Compose 回归测试。
 
 ## [0.2.5] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Align the Compose version regression test with the `0.2.4` startup-retry image change and publish a clean release tag.
-- Make `0.2.5` the recommended no-`.env` Compose image.
+- 将 Compose 版本回归测试与 `0.2.4` 的启动重试镜像变更对齐，并发布干净的 Release 标签。
+- 将 `0.2.5` 作为推荐的无 `.env` Compose 镜像。
 
 ## [0.2.4] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Retry PostgreSQL DNS/connection failures during application startup instead of entering a restart loop when Compose starts services concurrently.
-- Add an explicit Compose network and `postgres` service alias for panel-managed deployments.
+- 在应用启动时重试 PostgreSQL 的 DNS/连接失败，避免在 Compose 并发启动服务时进入重启循环。
+- 为面板管理的部署添加显式的 Compose 网络和 `postgres` 服务别名。
 
 ## [0.2.3] - 2026-08-26
 
-### Fixed
+### 修复
 
-- Escaped shell variables in the no-`.env` Compose bootstrap script so Docker Compose does not warn about an unset `value` variable.
-- Bootstrap-generated secrets are preserved across repeated starts and safely loaded by the non-root application container.
+- 转义无 `.env` Compose bootstrap 脚本中的 shell 变量，使 Docker Compose 不再对未设置的 `value` 变量发出警告。
+- Bootstrap 生成的密钥在多次启动间得以保留，并由非 root 应用容器安全加载。
 
 ## [0.2.2] - 2026-08-26
 
-### Changed
+### 变更
 
-- Production Compose can start without a pre-created `.env` file.
-- A one-shot `bootstrap-secrets` container generates and persists runtime secrets in a private Docker volume.
-- PostgreSQL uses `POSTGRES_PASSWORD_FILE`; the application reads generated secrets through a read-only secret volume.
-- The default GHCR image is now `ghcr.io/guyao146/sakura-mcp-server:0.2.2`.
-- Windows PowerShell and Linux first-run installers remain available for domain-specific setup.
+- 生产 Compose 可在没有预先创建的 `.env` 文件时启动。
+- 一次性的 `bootstrap-secrets` 容器在私有 Docker 卷中生成并持久化运行时密钥。
+- PostgreSQL 使用 `POSTGRES_PASSWORD_FILE`；应用通过只读密钥卷读取生成的密钥。
+- 默认 GHCR 镜像改为 `ghcr.io/guyao146/sakura-mcp-server:0.2.2`。
+- 保留 Windows PowerShell 和 Linux 首次安装脚本以支持特定场景的部署。
 
 ## [0.2.1] - 2026-08-26
 
-### Added
+### 新增
 
-- Public GHCR multi-platform container publishing workflow for `linux/amd64` and `linux/arm64`.
-- Production Compose deployment from a versioned remote image.
-- Separate `docker-compose.dev.yml` for local source builds.
-- Linux installer support for remote-image mode and explicit `--local-build` mode.
+- 面向 `linux/amd64` 和 `linux/arm64` 的公开 GHCR 多平台容器发布工作流。
+- 从带版本的远程镜像进行生产 Compose 部署。
+- 独立的 `docker-compose.dev.yml` 用于本地源码构建。
+- Linux 安装脚本支持远程镜像模式和显式的 `--local-build` 模式。
 
-### Changed
+### 变更
 
-- The production image uses the `0.2.1` GHCR tag by default.
-- The production runtime uses the Debian slim Node image and a non-root Debian user.
+- 生产镜像默认使用 `0.2.1` GHCR 标签。
+- 生产运行时使用 Debian slim Node 镜像和非 root 的 Debian 用户。
 
 ## [0.2.0] - 2026-08-26
 
-### Added
+### 新增
 
-- Multi-user personal and shared memory spaces with role-based access.
-- Authentik OAuth/OIDC login using Authorization Code + PKCE.
-- Database-backed Agent keys with scopes, expiry, revocation and per-space grants.
-- PostgreSQL + pgvector memory storage, versioning, sources, relations and feedback.
-- OpenAI-compatible and Ollama Chat/Embedding providers.
-- Full-text and semantic hybrid recall with mixed-dimension safety.
-- Automatic candidate extraction, duplicate detection and human conflict resolution.
-- Portable JSON/Markdown import and export.
-- MCP Tools and `memory://` Resources.
-- Secure Web management console and first-run installation wizard.
-- PostgreSQL background queue with concurrent claiming, recovery, retry and cancellation.
-- Space-wide embedding rebuild jobs.
-- Tenant-filtered PostgreSQL audit logs with JSONL fallback and recursive redaction.
-- HTTP security headers, tiered rate limits and detailed health checks.
-- Docker Compose deployment with pgvector and container hardening.
-- CI with real PostgreSQL integration tests, npm audit, Docker build and Trivy scan.
+- 支持基于角色访问控制的多用户个人和共享记忆空间。
+- 使用 Authorization Code + PKCE 的 Authentik OAuth/OIDC 登录。
+- 基于数据库的 Agent 密钥，支持 scope、到期、撤销和按空间授权。
+- PostgreSQL + pgvector 记忆存储、版本、来源、关系和反馈。
+- OpenAI-compatible 和 Ollama 的对话/向量 Provider。
+- 全文和语义混合召回，并保证不同向量维度的安全性。
+- 自动候选提取、重复检测和人工冲突处理。
+- 可移植的 JSON/Markdown 导入导出。
+- MCP Tools 和 `memory://` Resources。
+- 安全的 Web 管理后台和首次安装向导。
+- PostgreSQL 后台队列，支持并发领取、恢复、重试和取消。
+- 空间级向量重建任务。
+- 按租户过滤的 PostgreSQL 审计日志，带 JSONL 回退和递归脱敏。
+- HTTP 安全头、分级限流和详细的健康检查。
+- 带 pgvector 和容器加固的 Docker Compose 部署。
+- 带真实 PostgreSQL 集成测试、npm audit、Docker 构建和 Trivy 扫描的 CI。
 
-### Changed
+### 变更
 
-- Product focus changed from project-specific integrations to a universal AI long-term memory platform.
-- MCP transport is stateless per request to prevent cross-principal session reuse.
+- 产品定位从特定项目集成转向通用 AI 长期记忆平台。
+- MCP 传输改为按请求无状态，防止跨主体的会话复用。
 
-### Security
+### 安全
 
-- Provider secrets use AES-256-GCM encryption at rest.
-- Agent and Web Session tokens are stored only as SHA-256 hashes.
-- CSRF protection is bound to each Web Session.
-- Audit metadata redacts credentials and memory bodies.
-- Cross-space and cross-user access is enforced in repository and SQL query layers.
+- Provider 密钥使用 AES-256-GCM 静态加密。
+- Agent 和 Web Session Token 仅以 SHA-256 哈希存储。
+- CSRF 保护与每个 Web Session 绑定。
+- 审计元数据对凭据和记忆正文进行脱敏。
+- 在仓储层和 SQL 查询层强制执行跨空间、跨用户的访问控制。
 
 ## [0.1.0] - 2026-08-25
 
-- Initial secure Streamable HTTP MCP server skeleton.
-- API Key and Authentik JWT resource-server authentication.
-- Docker, Nginx, CI and automatic GitHub Release workflow.
+- 初始的安全 Streamable HTTP MCP 服务骨架。
+- API Key 和 Authentik JWT 资源服务器认证。
+- Docker、Nginx、CI 和自动 GitHub Release 工作流。

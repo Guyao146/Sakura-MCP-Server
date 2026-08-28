@@ -106,6 +106,27 @@ export class WebSessionService {
     if (token) await this.database.query('UPDATE web_sessions SET revoked_at=now() WHERE token_hash=$1', [hash(token)]);
   }
 
+  /**
+   * Builds the OpenID Connect RP-Initiated Logout URL so that revoking the local
+   * session also ends the Authentik SSO session. Falls back to the Authentik
+   * convention of `<issuer>/end-session/` for installations configured before
+   * the endpoint was captured. Returns undefined when no usable URL exists.
+   */
+  endSessionUrl(returnTo = '/auth/login'): string | undefined {
+    const auth = this.getConfig().authentik;
+    if (!auth?.clientId) return undefined;
+    const candidate = auth.endSessionUrl || (auth.issuer ? `${auth.issuer.replace(/\/$/, '')}/end-session/` : '');
+    if (!candidate) return undefined;
+    const safeReturnTo = /^\/(?!\/)/.test(returnTo) ? returnTo : '/auth/login';
+    let url: URL;
+    try { url = new URL(candidate); }
+    catch { return undefined; }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    url.searchParams.set('client_id', auth.clientId);
+    url.searchParams.set('post_logout_redirect_uri', `${this.getConfig().publicBaseUrl}${safeReturnTo}`);
+    return url.toString();
+  }
+
   csrf(identity: WebIdentity): string {
     return createHmac('sha256', this.getConfig().setup.encryptionKey)
       .update(`csrf:${identity.sessionId}:${identity.userId}`).digest('base64url');

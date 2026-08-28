@@ -50,7 +50,7 @@ export interface AppConfig {
   publicBaseUrl: string; host: string; port: number; logLevel: string; authEnabled: boolean; apiKeys: ApiKeyRecord[];
   authentik?: {
     issuer: string; audience: string; jwksUri: string; scopeClaim: string;
-    clientId?: string; authorizationUrl?: string; tokenUrl?: string; userinfoUrl?: string;
+    clientId?: string; authorizationUrl?: string; tokenUrl?: string; userinfoUrl?: string; endSessionUrl?: string;
   };
   database: { connectionString: string; host: string; maxConnections: number; autoMigrate: boolean };
   setup: { encryptionKey: string };

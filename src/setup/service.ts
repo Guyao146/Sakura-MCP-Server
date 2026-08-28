@@ -6,7 +6,8 @@ import type { SettingsRepository } from '../settings/repository.js';
 
 export const authentikConfigSchema = z.object({
   issuer: z.url(), audience: z.string().min(1).max(500), jwksUri: z.url(), scopeClaim: z.string().min(1).max(100).default('scope'),
-  clientId: z.string().min(1).max(500), authorizationUrl: z.url(), tokenUrl: z.url(), userinfoUrl: z.url().optional()
+  clientId: z.string().min(1).max(500), authorizationUrl: z.url(), tokenUrl: z.url(), userinfoUrl: z.url().optional(),
+  endSessionUrl: z.url().optional()
 });
 
 export const setupInputSchema = z.object({
@@ -29,7 +30,8 @@ const authentikDiscoverySchema = z.object({
   authorization_endpoint: z.url(),
   token_endpoint: z.url(),
   jwks_uri: z.url(),
-  userinfo_endpoint: z.url().optional()
+  userinfo_endpoint: z.url().optional(),
+  end_session_endpoint: z.url().optional()
 });
 
 export class SetupService {
@@ -62,7 +64,7 @@ export class SetupService {
     catch { throw new Error('Authentik discovery response is not valid JSON.'); }
     const metadata = authentikDiscoverySchema.parse(decoded);
     for (const value of [metadata.issuer, metadata.authorization_endpoint, metadata.token_endpoint,
-      metadata.jwks_uri, metadata.userinfo_endpoint].filter(Boolean) as string[]) {
+      metadata.jwks_uri, metadata.userinfo_endpoint, metadata.end_session_endpoint].filter(Boolean) as string[]) {
       const endpoint = new URL(value);
       if (endpoint.protocol !== 'https:' || endpoint.origin !== base.origin) {
         throw new Error('Authentik discovery returned an insecure or cross-origin endpoint.');
@@ -71,7 +73,7 @@ export class SetupService {
     return {
       discoveryUrl: discoveryUrl.toString(), issuer: metadata.issuer, jwksUri: metadata.jwks_uri,
       authorizationUrl: metadata.authorization_endpoint, tokenUrl: metadata.token_endpoint,
-      userinfoUrl: metadata.userinfo_endpoint
+      userinfoUrl: metadata.userinfo_endpoint, endSessionUrl: metadata.end_session_endpoint
     };
   }
 

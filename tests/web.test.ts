@@ -88,6 +88,34 @@ describe('Web management security', () => {
     expect(database.query).toHaveBeenCalledWith('UPDATE users SET is_system_admin=true WHERE id=$1', [first.userId]);
   });
 
+  it('performs RP-initiated logout so the Authentik SSO session also ends', () => {
+    expect(adminPage).toContain("location=d.redirectTo||'/auth/login'");
+    const authentik = {
+      issuer: 'https://login.example.com/application/o/sakura-mcp/', audience: 'https://mcp.example.com',
+      jwksUri: 'https://login.example.com/jwks/', scopeClaim: 'scope', clientId: 'client-id',
+      authorizationUrl: 'https://login.example.com/authorize/', tokenUrl: 'https://login.example.com/token/',
+      endSessionUrl: 'https://login.example.com/application/o/sakura-mcp/end-session/'
+    };
+    const service = new WebSessionService({} as never, () => ({ ...config, authentik }));
+    const url = new URL(service.endSessionUrl()!);
+    expect(url.origin + url.pathname).toBe('https://login.example.com/application/o/sakura-mcp/end-session/');
+    expect(url.searchParams.get('client_id')).toBe('client-id');
+    expect(url.searchParams.get('post_logout_redirect_uri')).toBe('https://mcp.example.com/auth/login');
+  });
+
+  it('derives the Authentik end-session URL and rejects unsafe return targets', () => {
+    const authentik = {
+      issuer: 'https://login.example.com/application/o/sakura-mcp', audience: 'https://mcp.example.com',
+      jwksUri: 'https://login.example.com/jwks/', scopeClaim: 'scope', clientId: 'client-id',
+      authorizationUrl: 'https://login.example.com/authorize/', tokenUrl: 'https://login.example.com/token/'
+    };
+    const service = new WebSessionService({} as never, () => ({ ...config, authentik }));
+    const derived = new URL(service.endSessionUrl('https://evil.example.com/')!);
+    expect(derived.pathname).toBe('/application/o/sakura-mcp/end-session/');
+    expect(derived.searchParams.get('post_logout_redirect_uri')).toBe('https://mcp.example.com/auth/login');
+    expect(new WebSessionService({} as never, () => config).endSessionUrl()).toBeUndefined();
+  });
+
   it('contains syntactically valid browser JavaScript', () => {
     const script = adminPage.match(/<script>([\s\S]*)<\/script>/)?.[1];
     expect(script).toBeTruthy();

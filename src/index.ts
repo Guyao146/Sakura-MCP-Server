@@ -147,7 +147,7 @@ app.get('/auth/callback', async context => {
   }
 });
 app.post('/auth/logout', async context => {
-  if (!config.authEnabled) return context.json({ loggedOut: true, authEnabled: false });
+  if (!config.authEnabled) return context.json({ loggedOut: true, authEnabled: false, redirectTo: '/admin' });
   try {
     const token = WebSessionService.readCookie(context.req.header('cookie'));
     const identity = await webSessions.authenticate(token);
@@ -157,7 +157,7 @@ app.post('/auth/logout', async context => {
     await webSessions.logout(token);
     await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action: 'auth.logout', result: 'success' });
     context.header('Set-Cookie', webSessions.clearCookie());
-    return context.json({ loggedOut: true });
+    return context.json({ loggedOut: true, redirectTo: webSessions.endSessionUrl() ?? '/auth/login' });
   } catch (error) {
     return context.json({ error: 'unauthorized', error_description: error instanceof Error ? error.message : 'Unauthorized.' }, 401);
   }

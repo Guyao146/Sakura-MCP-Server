@@ -37,7 +37,7 @@ describe('installation security', () => {
     expect(setupPage).toContain('authApplicationSlug');
     expect(setupPage).toContain('获取 OpenID 配置');
     for (const label of ['签发者地址（Issuer）', '令牌受众（Audience）', '客户端 ID（公共客户端 + PKCE）',
-      '签名密钥地址（JWKS URI）', '授权地址', '令牌地址', '用户信息地址（可选）', '权限范围字段（Scope Claim）']) {
+      '签名密钥地址（JWKS URI）', '授权地址', '令牌地址', '用户信息地址（可选）', '登出地址（End Session，可选）', '权限范围字段（Scope Claim）']) {
       expect(setupPage).toContain(label);
     }
     expect(setupPage).not.toContain('<label>Issuer</label>');
@@ -51,7 +51,7 @@ describe('installation security', () => {
     expect(setupScript).toContain('requestId!==discoveryRequestId');
     expect(setupScript).toContain("MCP URL：'+location.origin");
     expect(setupScript).toContain("兼容地址：'+location.origin+'/mcp'");
-    for (const field of ['issuer','jwksUri','authorizationUrl','tokenUrl','userinfoUrl']) {
+    for (const field of ['issuer','jwksUri','authorizationUrl','tokenUrl','userinfoUrl','endSessionUrl']) {
       expect(setupScript).toContain(`$('${field}').value=data.${field}`);
     }
     expect(setupScript).toContain("'HTTP '+response.status");
@@ -86,7 +86,8 @@ describe('installation security', () => {
       authorization_endpoint: 'https://login.example.com/application/o/authorize/',
       token_endpoint: 'https://login.example.com/application/o/token/',
       jwks_uri: 'https://login.example.com/application/o/sakura-mcp/jwks/',
-      userinfo_endpoint: 'https://login.example.com/application/o/userinfo/'
+      userinfo_endpoint: 'https://login.example.com/application/o/userinfo/',
+      end_session_endpoint: 'https://login.example.com/application/o/sakura-mcp/end-session/'
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetcher);
     const service = new SetupService(true, 'https://mcp.example.com', {} as never, {} as never);
@@ -96,7 +97,8 @@ describe('installation security', () => {
         jwksUri: 'https://login.example.com/application/o/sakura-mcp/jwks/',
         authorizationUrl: 'https://login.example.com/application/o/authorize/',
         tokenUrl: 'https://login.example.com/application/o/token/',
-        userinfoUrl: 'https://login.example.com/application/o/userinfo/'
+        userinfoUrl: 'https://login.example.com/application/o/userinfo/',
+        endSessionUrl: 'https://login.example.com/application/o/sakura-mcp/end-session/'
       });
     expect(fetcher).toHaveBeenCalledWith(
       new URL('https://login.example.com/application/o/sakura-mcp/.well-known/openid-configuration'),

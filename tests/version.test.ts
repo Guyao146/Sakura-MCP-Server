@@ -4,10 +4,10 @@ import { APP_VERSION, compareVersions, UpdateChecker } from '../src/version.js';
 
 describe('application version and update checks', () => {
   it('uses the released semantic version and compares versions', () => {
-    expect(APP_VERSION).toBe('0.2.23');
-    expect(compareVersions('0.2.23', '0.2.22')).toBe(1);
-    expect(compareVersions('0.2.23', '0.2.23')).toBe(0);
-    expect(compareVersions('0.2.22', '0.2.23')).toBe(-1);
+    expect(APP_VERSION).toBe('0.2.24');
+    expect(compareVersions('0.2.24', '0.2.23')).toBe(1);
+    expect(compareVersions('0.2.24', '0.2.24')).toBe(0);
+    expect(compareVersions('0.2.23', '0.2.24')).toBe(-1);
     expect(compareVersions('1.0.0', '1.0.0-beta.1')).toBe(1);
   });
 
