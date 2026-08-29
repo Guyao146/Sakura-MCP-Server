@@ -40,7 +40,7 @@ export class WebSessionService {
     url.searchParams.set('client_id', auth.clientId!);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('redirect_uri', `${this.getConfig().publicBaseUrl}/auth/callback`);
-    url.searchParams.set('scope', 'openid profile email groups');
+    url.searchParams.set('scope', 'openid profile email');
     url.searchParams.set('state', state);
     url.searchParams.set('nonce', nonce);
     url.searchParams.set('code_challenge', challenge);
@@ -170,21 +170,33 @@ export class WebSessionService {
 }
 
 /**
- * Resolves whether the ID Token places the user in one of the configured
- * Authentik administrator groups. Returns undefined when group-based
- * administration is not usable for this login so that callers keep the
- * existing allowlist behaviour instead of revoking access:
- * - no adminGroups configured, or
- * - the provider did not emit the groups claim (missing scope mapping).
+ * Authentik's built-in superuser group. Authentik's default `profile` scope
+ * mapping already returns `groups` as a list of group names, so recognising
+ * this name makes Authentik administrators system administrators without any
+ * extra configuration.
+ */
+export const DEFAULT_ADMIN_GROUPS = ['authentik Admins'];
+
+/**
+ * Resolves whether the ID Token places the user in an administrator group.
+ *
+ * - Explicitly configured `adminGroups` are authoritative: a miss returns false
+ *   so that removing someone from the group revokes access on the next login.
+ * - Without configuration the built-in Authentik superuser group only ever
+ *   promotes, returning undefined on a miss so that manually granted
+ *   administrators and the allowlist keep working.
+ * - Returns undefined when the provider emitted no usable groups claim.
  */
 export function adminByGroup(payload: JWTPayload, auth: NonNullable<AppConfig['authentik']>): boolean | undefined {
-  const expected = auth.adminGroups?.map(group => group.trim().toLowerCase()).filter(Boolean);
-  if (!expected?.length) return undefined;
+  const configured = auth.adminGroups?.map(group => group.trim().toLowerCase()).filter(Boolean) ?? [];
+  const expected = configured.length ? configured : DEFAULT_ADMIN_GROUPS.map(group => group.toLowerCase());
   const raw = payload[auth.groupsClaim ?? 'groups'];
   const groups = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/[,\s]+/) : undefined;
   if (!groups) return undefined;
   const actual = groups.filter((group): group is string => typeof group === 'string').map(group => group.trim().toLowerCase());
-  return actual.some(group => expected.includes(group));
+  const matched = actual.some(group => expected.includes(group));
+  if (matched) return true;
+  return configured.length ? false : undefined;
 }
 
 export async function describeTokenExchangeFailure(response: Response): Promise<string> {

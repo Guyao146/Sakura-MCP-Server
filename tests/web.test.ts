@@ -3,7 +3,7 @@ import { Script } from 'node:vm';
 import { loadConfig } from '../src/config.js';
 import { adminPage } from '../src/web/admin-page.js';
 import { loginPage } from '../src/web/login-page.js';
-import { adminByGroup, describeTokenExchangeFailure, WebSessionService, type WebIdentity } from '../src/web/session.js';
+import { adminByGroup, DEFAULT_ADMIN_GROUPS, describeTokenExchangeFailure, WebSessionService, type WebIdentity } from '../src/web/session.js';
 
 const config = loadConfig({
   PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: 'postgresql://localhost/test',
@@ -146,17 +146,29 @@ describe('Web management security', () => {
     expect(adminByGroup({ roles: ['Sakura Admins'] }, { ...auth, groupsClaim: 'roles' })).toBe(true);
   });
 
+  it('treats Authentik superusers as system administrators without configuration', () => {
+    const auth = { issuer: 'https://login.example.com', audience: 'mcp', jwksUri: 'https://login.example.com/jwks/',
+      scopeClaim: 'scope', clientId: 'client-id' };
+    expect(DEFAULT_ADMIN_GROUPS).toContain('authentik Admins');
+    expect(adminByGroup({ groups: ['authentik Admins'] }, auth)).toBe(true);
+    expect(adminByGroup({ groups: ['authentik admins'] }, auth)).toBe(true);
+    // Without configuration a miss must not revoke manually granted administrators.
+    expect(adminByGroup({ groups: ['Users'] }, auth)).toBeUndefined();
+    // An explicit list replaces the built-in group and becomes authoritative.
+    expect(adminByGroup({ groups: ['authentik Admins'] }, { ...auth, adminGroups: ['Sakura Admins'] })).toBe(false);
+  });
+
   it('falls back to the allowlist when groups are unusable', () => {
     const auth = { issuer: 'https://login.example.com', audience: 'mcp', jwksUri: 'https://login.example.com/jwks/',
       scopeClaim: 'scope', clientId: 'client-id' };
-    expect(adminByGroup({ groups: ['Sakura Admins'] }, auth)).toBeUndefined();
-    expect(adminByGroup({ groups: ['Sakura Admins'] }, { ...auth, adminGroups: [] })).toBeUndefined();
+    expect(adminByGroup({}, auth)).toBeUndefined();
     expect(adminByGroup({}, { ...auth, adminGroups: ['Sakura Admins'] })).toBeUndefined();
     expect(adminByGroup({ groups: [42] }, { ...auth, adminGroups: ['Sakura Admins'] })).toBe(false);
+    expect(adminByGroup({ groups: [42] }, auth)).toBeUndefined();
   });
 
   it('requests the groups scope and exposes the admin group field', () => {
-    for (const marker of ['akAdminGroups', '管理员用户组（可选，多个用英文逗号分隔）', 'akGroupList()']) {
+    for (const marker of ['akAdminGroups', '管理员用户组（可选，留空表示 authentik Admins）', 'akGroupList()']) {
       expect(adminPage).toContain(marker);
     }
   });

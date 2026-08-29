@@ -333,7 +333,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.26
+ghcr.io/guyao146/sakura-mcp-server:0.2.27
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -363,7 +363,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.26
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.27
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -479,12 +479,13 @@ https://login.example.com/application/o/sakura-mcp/.well-known/openid-configurat
 
 ### 系统管理员的授予方式
 
-系统管理员可以管理模型 Provider、Authentik 配置和版本更新。有两种授予途径，满足其一即可：
+系统管理员可以管理模型 Provider、Authentik 配置和版本更新。有三种授予途径，满足其一即可：
 
+- **Authentik 超级用户（默认生效，无需配置）**。ID Token 的 `groups` 声明包含 `authentik Admins` 即为系统管理员。Authentik 默认的 `profile` 权限映射本身就会返回用户所属用户组名称，因此 Authentik 的管理员登录后自动就是 Sakura 的系统管理员。
 - 安装时填写的系统管理员邮箱。该邮箱写入白名单，登录时与 ID Token 的 `email` 声明比对（忽略大小写），始终保留管理员权限。
-- 「管理员用户组」。在安装向导或后台「身份认证」中填写 Authentik 用户组名称，多个用英文逗号分隔；登录时 ID Token 的 `groups` 声明命中任一组即为管理员，未命中则回收管理员身份，因此在 Authentik 侧调整用户组后下次登录立即生效。
+- 自定义「管理员用户组」。在安装向导或后台「身份认证」中填写用户组名称，多个用英文逗号分隔。一旦填写就完全替代内置的 `authentik Admins`，并成为权威判据：命中即管理员，未命中则回收管理员身份，因此在 Authentik 侧调整用户组后下次登录立即生效。
 
-使用用户组需要在 Authentik 的 OAuth2/OIDC Provider 的 Scopes 中加入 `groups` 属性映射（`authentik default OAuth Mapping: OpenID 'groups'`），否则 ID Token 不会携带用户组。未配置管理员用户组，或提供方未下发该声明时，仅使用邮箱白名单判断，不会误降权。
+留空「管理员用户组」时只做提权、不做降权，手工在数据库里授予的管理员不会被回收。若 Provider 移除了默认 `profile` 权限映射导致 ID Token 不含 `groups`，则退回仅用邮箱白名单判断，同样不会误降权。
 
 安装完成前：
 
@@ -631,7 +632,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.26`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.27`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 
