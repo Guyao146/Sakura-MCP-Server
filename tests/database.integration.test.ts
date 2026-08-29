@@ -64,6 +64,23 @@ describeDatabase('PostgreSQL installation integration', () => {
     expect(user.rows[0].is_system_admin).toBe(true);
   });
 
+  it('synchronises system administration with Authentik group membership', async () => {
+    const repository = new MemoryRepository(database);
+    const admin = async (userId: string) => (await database.query<{ is_system_admin: boolean }>(
+      'SELECT is_system_admin FROM users WHERE id=$1', [userId])).rows[0].is_system_admin;
+
+    const member = await repository.ensureUser('group-admin-subject', { email: 'group@example.com', displayName: 'Group Admin', adminByGroup: true });
+    expect(await admin(member.userId)).toBe(true);
+    await repository.ensureUser('group-admin-subject', { email: 'group@example.com', displayName: 'Group Admin', adminByGroup: false });
+    expect(await admin(member.userId)).toBe(false);
+    await repository.ensureUser('group-admin-subject', { email: 'group@example.com', displayName: 'Group Admin' });
+    expect(await admin(member.userId)).toBe(false);
+
+    // The installation administrator keeps access even when outside the admin group.
+    const owner = await repository.ensureUser('allowlisted-subject', { email: 'OWNER@example.com', displayName: 'Owner', adminByGroup: false });
+    expect(await admin(owner.userId)).toBe(true);
+  });
+
   it('creates hashed Agent keys, enforces space grants, and revokes immediately', async () => {
     const memory = new MemoryRepository(database);
     const identity = await memory.ensureUser('agent-owner-subject', { email: 'agent-owner@example.com', displayName: 'Agent Owner' });

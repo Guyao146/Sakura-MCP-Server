@@ -7,7 +7,8 @@ import type { SettingsRepository } from '../settings/repository.js';
 export const authentikConfigSchema = z.object({
   issuer: z.url(), audience: z.string().min(1).max(500), jwksUri: z.url(), scopeClaim: z.string().min(1).max(100).default('scope'),
   clientId: z.string().min(1).max(500), authorizationUrl: z.url(), tokenUrl: z.url(), userinfoUrl: z.url().optional(),
-  endSessionUrl: z.url().optional()
+  endSessionUrl: z.url().optional(), groupsClaim: z.string().min(1).max(100).default('groups'),
+  adminGroups: z.array(z.string().min(1).max(200)).max(20).optional()
 });
 
 export const setupInputSchema = z.object({

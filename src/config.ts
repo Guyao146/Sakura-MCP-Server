@@ -51,6 +51,7 @@ export interface AppConfig {
   authentik?: {
     issuer: string; audience: string; jwksUri: string; scopeClaim: string;
     clientId?: string; authorizationUrl?: string; tokenUrl?: string; userinfoUrl?: string; endSessionUrl?: string;
+    groupsClaim?: string; adminGroups?: string[];
   };
   database: { connectionString: string; host: string; maxConnections: number; autoMigrate: boolean };
   setup: { encryptionKey: string };

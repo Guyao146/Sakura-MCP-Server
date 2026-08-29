@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import type { AppConfig } from '../config.js';
 import type { Database } from '../database.js';
 import { MemoryRepository } from '../memory/repository.js';
@@ -40,7 +40,7 @@ export class WebSessionService {
     url.searchParams.set('client_id', auth.clientId!);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('redirect_uri', `${this.getConfig().publicBaseUrl}/auth/callback`);
-    url.searchParams.set('scope', 'openid profile email');
+    url.searchParams.set('scope', 'openid profile email groups');
     url.searchParams.set('state', state);
     url.searchParams.set('nonce', nonce);
     url.searchParams.set('code_challenge', challenge);
@@ -78,7 +78,9 @@ export class WebSessionService {
     if (!payload.sub) throw new Error('OIDC ID Token is missing subject.');
     const email = typeof payload.email === 'string' ? payload.email : undefined;
     const displayName = typeof payload.name === 'string' ? payload.name : typeof payload.preferred_username === 'string' ? payload.preferred_username : payload.sub;
-    const identity = await new MemoryRepository(this.database).ensureUser(payload.sub, { email, displayName });
+    const identity = await new MemoryRepository(this.database).ensureUser(payload.sub, {
+      email, displayName, adminByGroup: adminByGroup(payload, auth)
+    });
     const token = `sess_${base64url(randomBytes(32))}`;
     await this.database.query(
       `INSERT INTO web_sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '12 hours')`,
@@ -165,6 +167,24 @@ export class WebSessionService {
     if (!auth?.clientId || !auth.authorizationUrl || !auth.tokenUrl) throw new Error('Authentik browser login is not configured.');
     return auth as Required<NonNullable<AppConfig['authentik']>>;
   }
+}
+
+/**
+ * Resolves whether the ID Token places the user in one of the configured
+ * Authentik administrator groups. Returns undefined when group-based
+ * administration is not usable for this login so that callers keep the
+ * existing allowlist behaviour instead of revoking access:
+ * - no adminGroups configured, or
+ * - the provider did not emit the groups claim (missing scope mapping).
+ */
+export function adminByGroup(payload: JWTPayload, auth: NonNullable<AppConfig['authentik']>): boolean | undefined {
+  const expected = auth.adminGroups?.map(group => group.trim().toLowerCase()).filter(Boolean);
+  if (!expected?.length) return undefined;
+  const raw = payload[auth.groupsClaim ?? 'groups'];
+  const groups = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/[,\s]+/) : undefined;
+  if (!groups) return undefined;
+  const actual = groups.filter((group): group is string => typeof group === 'string').map(group => group.trim().toLowerCase());
+  return actual.some(group => expected.includes(group));
 }
 
 export async function describeTokenExchangeFailure(response: Response): Promise<string> {

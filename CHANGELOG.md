@@ -2,6 +2,17 @@
 
 本文件记录 Sakura-MCP-Server 的所有重要变更。
 
+## [0.2.26] - 2026-08-28
+
+### 新增
+
+- 支持通过 Authentik 用户组授予系统管理员权限。在安装向导和管理后台的「身份认证」中填写「管理员用户组」（多个用英文逗号分隔），登录时 ID Token 的 `groups` 声明命中任一组即成为系统管理员；未命中则回收管理员身份，因此在 Authentik 侧调整用户组后下次登录即生效。安装时填写的系统管理员邮箱始终保留管理员权限，不受用户组影响。浏览器登录请求的 scope 增加 `groups`。
+- 用户组声明字段可通过 `groupsClaim` 自定义，默认 `groups`。未配置管理员用户组、或提供方未下发该声明时，完全沿用原有的邮箱白名单逻辑，不会误降权。
+
+### 升级提示
+
+- 需在 Authentik 的 OAuth2/OIDC Provider 的 Scopes 中加入 `groups` 属性映射（`authentik default OAuth Mapping: OpenID 'groups'`），否则 ID Token 里不会带用户组信息。
+
 ## [0.2.25] - 2026-08-28
 
 ### 新增

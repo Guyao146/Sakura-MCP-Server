@@ -5,7 +5,7 @@ import type { MemoryRecord, RememberInput } from './types.js';
 export class MemoryRepository {
   constructor(private readonly database: Database) {}
 
-  async ensureUser(subject: string, profile?: { email?: string; displayName?: string }): Promise<{ userId: string; personalSpaceId: string }> {
+  async ensureUser(subject: string, profile?: { email?: string; displayName?: string; adminByGroup?: boolean }): Promise<{ userId: string; personalSpaceId: string }> {
     const client = await this.database.pool.connect();
     try {
       await client.query('BEGIN');
@@ -15,11 +15,16 @@ export class MemoryRepository {
          display_name=coalesce(EXCLUDED.display_name,users.display_name),last_login_at=now(),updated_at=now()
          RETURNING id`, [subject, profile?.email ?? null, profile?.displayName ?? subject]);
       const userId = result.rows[0].id;
-      if (profile?.email) {
-        await client.query(
-          `UPDATE users SET is_system_admin=true WHERE id=$1
-           AND EXISTS(SELECT 1 FROM system_admin_allowlist WHERE lower(email)=lower($2))`,
-          [userId, profile.email]);
+      const allowlisted = profile?.email
+        ? (await client.query('SELECT 1 FROM system_admin_allowlist WHERE lower(email)=lower($1)', [profile.email])).rowCount === 1
+        : false;
+      if (profile?.adminByGroup === undefined) {
+        // No usable group information: only ever promote, never revoke.
+        if (allowlisted) await client.query('UPDATE users SET is_system_admin=true WHERE id=$1', [userId]);
+      } else {
+        // Authentik groups are authoritative when configured and present, but the
+        // installation administrator stays an administrator regardless of groups.
+        await client.query('UPDATE users SET is_system_admin=$2 WHERE id=$1', [userId, allowlisted || profile.adminByGroup]);
       }
       const space = await client.query<{ id: string }>(
         `INSERT INTO spaces(type,name,description,created_by) VALUES('personal','Personal Memory','Private long-term memory', $1)

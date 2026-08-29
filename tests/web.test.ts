@@ -3,7 +3,7 @@ import { Script } from 'node:vm';
 import { loadConfig } from '../src/config.js';
 import { adminPage } from '../src/web/admin-page.js';
 import { loginPage } from '../src/web/login-page.js';
-import { describeTokenExchangeFailure, WebSessionService, type WebIdentity } from '../src/web/session.js';
+import { adminByGroup, describeTokenExchangeFailure, WebSessionService, type WebIdentity } from '../src/web/session.js';
 
 const config = loadConfig({
   PUBLIC_BASE_URL: 'https://mcp.example.com', DATABASE_URL: 'postgresql://localhost/test',
@@ -134,6 +134,31 @@ describe('Web management security', () => {
     expect(script).toContain("/^\\/(?!\\/)/.test(target)?target:'/admin'");
     expect(script).toContain("encodeURIComponent(safeTarget)");
     for (const reason of ['expired', 'logged_out']) expect(script).toContain(`${reason}:`);
+  });
+
+  it('grants system administration from configured Authentik groups', () => {
+    const auth = { issuer: 'https://login.example.com', audience: 'mcp', jwksUri: 'https://login.example.com/jwks/',
+      scopeClaim: 'scope', clientId: 'client-id', adminGroups: ['Sakura Admins'] };
+    expect(adminByGroup({ groups: ['Users', 'sakura admins'] }, auth)).toBe(true);
+    expect(adminByGroup({ groups: ['Users'] }, auth)).toBe(false);
+    expect(adminByGroup({ groups: 'Users Sakura Admins' }, { ...auth, adminGroups: ['Users'] })).toBe(true);
+    expect(adminByGroup({ groups: ['Sakura Admins'] }, { ...auth, groupsClaim: 'roles' })).toBeUndefined();
+    expect(adminByGroup({ roles: ['Sakura Admins'] }, { ...auth, groupsClaim: 'roles' })).toBe(true);
+  });
+
+  it('falls back to the allowlist when groups are unusable', () => {
+    const auth = { issuer: 'https://login.example.com', audience: 'mcp', jwksUri: 'https://login.example.com/jwks/',
+      scopeClaim: 'scope', clientId: 'client-id' };
+    expect(adminByGroup({ groups: ['Sakura Admins'] }, auth)).toBeUndefined();
+    expect(adminByGroup({ groups: ['Sakura Admins'] }, { ...auth, adminGroups: [] })).toBeUndefined();
+    expect(adminByGroup({}, { ...auth, adminGroups: ['Sakura Admins'] })).toBeUndefined();
+    expect(adminByGroup({ groups: [42] }, { ...auth, adminGroups: ['Sakura Admins'] })).toBe(false);
+  });
+
+  it('requests the groups scope and exposes the admin group field', () => {
+    for (const marker of ['akAdminGroups', '管理员用户组（可选，多个用英文逗号分隔）', 'akGroupList()']) {
+      expect(adminPage).toContain(marker);
+    }
   });
 
   it('contains syntactically valid browser JavaScript', () => {
