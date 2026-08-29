@@ -29,7 +29,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   const governance = new MemoryGovernanceService(database);
   const transfer = new MemoryTransferService(database, semantic, governance);
   const jobs = new JobRepository(database);
-  const agents = new AgentRepository(database);
+  const agents = new AgentRepository(database, getConfig().setup.encryptionKey);
   const spaces = new SpaceRepository(database);
   const identity = repository.ensureUser(principal.id, { email: principal.email, displayName: principal.displayName });
   const requireHuman = () => {
@@ -277,7 +277,7 @@ export function createServer(database: Database, principal: Principal, audit: Au
   ])).min(1).max(9);
 
   server.registerTool('agent_create', {
-    description: 'Create an Agent API key. The plaintext token is returned exactly once.',
+    description: 'Create an Agent API key. The plaintext token is returned here and can be shown again in the management console.',
     inputSchema: { name: z.string().min(1).max(120), scopes: agentScopes, expires_at: z.iso.datetime().optional() }
   }, guarded('agent_create', ['agent:manage'], async (args, userId) => {
     requireHuman();

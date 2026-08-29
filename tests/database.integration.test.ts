@@ -34,7 +34,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     const extension = await database.query<{ extversion: string }>("SELECT extversion FROM pg_extension WHERE extname='vector'");
     const migrations = await database.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(extension.rows[0].extversion).toBeTruthy();
-    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql', '006_background_jobs.sql', '007_audit_security.sql']);
+    expect(migrations.rows.map(row => row.name)).toEqual(['001_memory_platform.sql', '002_installation.sql', '003_web_sessions.sql', '004_semantic_memory.sql', '005_memory_governance.sql', '006_background_jobs.sql', '007_audit_security.sql', '008_agent_secret_reveal.sql']);
     await expect(settings.installation()).resolves.toMatchObject({ completed: false });
   });
 
@@ -79,6 +79,37 @@ describeDatabase('PostgreSQL installation integration', () => {
     // The installation administrator keeps access even when outside the admin group.
     const owner = await repository.ensureUser('allowlisted-subject', { email: 'OWNER@example.com', displayName: 'Owner', adminByGroup: false });
     expect(await admin(owner.userId)).toBe(true);
+  });
+
+  it('reveals Agent secrets on demand and refuses legacy or revoked credentials', async () => {
+    const memory = new MemoryRepository(database);
+    const owner = await memory.ensureUser('agent-reveal-owner', { displayName: 'Reveal Owner' });
+    const repository = new AgentRepository(database, encryptionKey);
+    const created = await repository.create(owner.userId, 'Reveal Agent', ['memory:read']);
+
+    await expect(repository.reveal(owner.userId, created.id)).resolves.toMatchObject({ id: created.id, token: created.token });
+    const listed = await repository.list(owner.userId);
+    expect(listed.find(row => row.id === created.id)?.revealable).toBe(true);
+
+    // The plaintext token must never be readable from the row itself.
+    const stored = await database.query<{ secret_hash: string; secret_encrypted: unknown }>(
+      'SELECT secret_hash,secret_encrypted FROM agent_credentials WHERE id=$1', [created.id]);
+    expect(JSON.stringify(stored.rows[0])).not.toContain(created.token);
+    expect(stored.rows[0].secret_hash).not.toContain(created.token);
+
+    // Another user must not be able to reveal it.
+    const other = await memory.ensureUser('agent-reveal-intruder', { displayName: 'Intruder' });
+    await expect(repository.reveal(other.userId, created.id)).rejects.toThrow('not found or revoked');
+
+    // Credentials created before encrypted storage stay unrecoverable.
+    await database.query('UPDATE agent_credentials SET secret_encrypted=NULL WHERE id=$1', [created.id]);
+    await expect(repository.reveal(owner.userId, created.id)).rejects.toThrow('无法再次查看');
+    expect((await repository.list(owner.userId)).find(row => row.id === created.id)?.revealable).toBe(false);
+
+    // Revoked credentials cannot be revealed either.
+    const second = await repository.create(owner.userId, 'Revoked Agent', ['memory:read']);
+    await repository.revoke(owner.userId, second.id);
+    await expect(repository.reveal(owner.userId, second.id)).rejects.toThrow('not found or revoked');
   });
 
   it('creates hashed Agent keys, enforces space grants, and revokes immediately', async () => {

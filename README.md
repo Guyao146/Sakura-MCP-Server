@@ -58,14 +58,16 @@ space:create space:manage member:manage agent:manage admin:system
 正式 Agent Key 保存在 PostgreSQL，而不是共享 `.env` 密钥：
 
 ```text
-agent_create              创建 Key，明文 token 只返回一次
+agent_create              创建 Key，返回明文 token
 agent_list                查看前缀、scope、到期、撤销和空间授权
 agent_revoke              立即撤销 Key
 agent_grant_space         授予指定空间和空间级 scopes
 agent_revoke_space        移除指定空间授权
 ```
 
-Token 形如 `sk_sakura_<prefix>_<random-secret>`。数据库只保存完整 token 的 SHA-256 哈希和非敏感前缀。认证时同时校验：
+Token 形如 `sk_sakura_<prefix>_<random-secret>`。数据库保存完整 token 的 SHA-256 哈希（用于认证）、非敏感前缀，以及用 `CONFIG_ENCRYPTION_KEY` 加密（AES-256-GCM）的 token 副本，因此可以在管理后台的「Agent 密钥」列表中点击「查看密钥」随时再次查看，不必在创建时就抄下来。认证始终只比对哈希，加密副本仅用于展示；每次查看都会写入审计日志。0.2.28 之前创建的 Key 没有加密副本，无法再次查看，需要撤销后重新创建。
+
+认证时同时校验：
 
 ```text
 Agent 全局 scopes
@@ -333,7 +335,7 @@ docker compose up -d
 `docker-compose.yml` 是生产编排文件，默认直接拉取：
 
 ```text
-ghcr.io/guyao146/sakura-mcp-server:0.2.27
+ghcr.io/guyao146/sakura-mcp-server:0.2.28
 ```
 
 如果 GHCR Package 设置为 Public，服务器无需 `docker login`。首次发布后请在 GitHub 仓库的 **Packages → sakura-mcp-server → Package settings** 中确认可见性为 **Public**。
@@ -363,7 +365,7 @@ docker compose up -d
 生产 Compose 不需要本地 Dockerfile、Node.js、npm 或完整源码。镜像版本通过 `.env` 覆盖：
 
 ```dotenv
-SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.27
+SAKURA_MCP_IMAGE=ghcr.io/guyao146/sakura-mcp-server:0.2.28
 ```
 
 如果需要固定到其他已发布版本，只需修改 `SAKURA_MCP_IMAGE`，然后执行 `docker compose pull && docker compose up -d`。
@@ -632,7 +634,7 @@ npm.cmd start
 
 ## 当前开发状态
 
-`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.27`，对应 GHCR 镜像和生产 Compose 部署版本。
+`v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.2.28`，对应 GHCR 镜像和生产 Compose 部署版本。
 
 已完成：
 

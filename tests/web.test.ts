@@ -173,6 +173,15 @@ describe('Web management security', () => {
     }
   });
 
+  it('shows Agent secrets on demand instead of only at creation time', () => {
+    for (const marker of ['查看密钥', '隐藏密钥', 'revealAgent(', "'/api/admin/agents/'+id+'/reveal'",
+      'a.revealable', '密钥（可随时在列表中再次查看）：']) {
+      expect(adminPage).toContain(marker);
+    }
+    expect(adminPage).not.toContain('仅显示一次');
+    expect(adminPage).toContain('box.textContent=d.token');
+  });
+
   it('contains syntactically valid browser JavaScript', () => {
     const script = adminPage.match(/<script>([\s\S]*)<\/script>/)?.[1];
     expect(script).toBeTruthy();

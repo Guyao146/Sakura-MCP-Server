@@ -44,7 +44,7 @@ const updateChecker = new UpdateChecker();
 const webSessions = new WebSessionService(database, () => config);
 const memories = new MemoryRepository(database);
 const spaces = new SpaceRepository(database);
-const agents = new AgentRepository(database);
+const agents = new AgentRepository(database, baseConfig.setup.encryptionKey);
 const semantic = new SemanticMemoryService(database, () => config);
 const governance = new MemoryGovernanceService(database);
 const transfer = new MemoryTransferService(database, semantic, governance);
@@ -298,6 +298,8 @@ app.post('/api/admin/agents/:id/revoke', async context => adminApi(context, true
   await agents.revoke(identity.userId, z.string().uuid().parse(context.req.param('id')));
   return { revoked: true };
 }));
+app.post('/api/admin/agents/:id/reveal', async context => adminApi(context, true, identity =>
+  agents.reveal(identity.userId, z.string().uuid().parse(context.req.param('id')))));
 app.post('/api/admin/agents/:id/grants', async context => adminApi(context, true, async identity => {
   const body = z.object({ space_id: z.string().uuid(), scopes: agentScopeSchema }).parse(await context.req.json());
   return agents.grant(identity.userId, z.string().uuid().parse(context.req.param('id')), body.space_id, body.scopes);
