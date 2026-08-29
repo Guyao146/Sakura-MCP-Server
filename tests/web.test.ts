@@ -182,6 +182,14 @@ describe('Web management security', () => {
     expect(adminPage).toContain('box.textContent=d.token');
   });
 
+  it('deletes Agent keys instead of leaving revoked rows behind', () => {
+    for (const marker of ['deleteAgent(', "{method:'DELETE'}", '后密钥立即永久失效且无法恢复', 'Agent 已删除']) {
+      expect(adminPage).toContain(marker);
+    }
+    expect(adminPage).not.toContain('revokeAgent');
+    expect(adminPage).not.toContain("/revoke',{method:'POST'}");
+  });
+
   it('contains syntactically valid browser JavaScript', () => {
     const script = adminPage.match(/<script>([\s\S]*)<\/script>/)?.[1];
     expect(script).toBeTruthy();

@@ -106,9 +106,9 @@ describeDatabase('PostgreSQL installation integration', () => {
     await expect(repository.reveal(owner.userId, created.id)).rejects.toThrow('无法再次查看');
     expect((await repository.list(owner.userId)).find(row => row.id === created.id)?.revealable).toBe(false);
 
-    // Revoked credentials cannot be revealed either.
-    const second = await repository.create(owner.userId, 'Revoked Agent', ['memory:read']);
-    await repository.revoke(owner.userId, second.id);
+    // Deleted credentials cannot be revealed either.
+    const second = await repository.create(owner.userId, 'Deleted Agent', ['memory:read']);
+    await repository.remove(owner.userId, second.id);
     await expect(repository.reveal(owner.userId, second.id)).rejects.toThrow('not found or revoked');
   });
 
@@ -137,8 +137,11 @@ describeDatabase('PostgreSQL installation integration', () => {
     const visible = await spaces.list(identity.userId, created.id);
     expect(visible.map(row => row.id)).toContain(shared.id);
     expect(visible.map(row => row.id)).not.toContain(hidden.id);
-    await agents.revoke(identity.userId, created.id);
+    await agents.remove(identity.userId, created.id);
     await expect(new AuthService(authConfig, database).authenticate(`Bearer ${created.token}`)).rejects.toThrow('Invalid credential');
+    // Deleting the credential cascades its space grants but keeps the space itself.
+    expect((await database.query('SELECT 1 FROM agent_space_grants WHERE agent_id=$1', [created.id])).rowCount).toBe(0);
+    expect((await spaces.list(identity.userId)).map(row => row.id)).toContain(shared.id);
   });
 
   it('stores only hashed Web sessions and revokes logout immediately', async () => {
@@ -382,7 +385,7 @@ describeDatabase('PostgreSQL installation integration', () => {
     await expect(jobs.get(tenantA.userId, job.id)).rejects.toThrow('not found or access denied');
     const agents = new AgentRepository(database);
     const agentB = await agents.create(tenantB.userId, 'Tenant B Agent', ['memory:read']);
-    await expect(agents.revoke(tenantA.userId, agentB.id)).rejects.toThrow('not found or already revoked');
+    await expect(agents.remove(tenantA.userId, agentB.id)).rejects.toThrow('not found');
     await expect(agents.grant(tenantA.userId, agentB.id, tenantA.personalSpaceId, ['memory:read'])).rejects.toThrow('not found or revoked');
     const transfer = new MemoryTransferService(database, new SemanticMemoryService(database, () => config), new MemoryGovernanceService(database));
     await expect(transfer.export(tenantA.userId, tenantB.personalSpaceId, 'json')).rejects.toThrow('access denied');

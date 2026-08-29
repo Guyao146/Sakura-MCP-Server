@@ -48,9 +48,14 @@ export class AgentRepository {
     return result.rows;
   }
 
-  async revoke(ownerId: string, agentId: string): Promise<void> {
-    const result = await this.database.query('UPDATE agent_credentials SET revoked_at=now() WHERE id=$1 AND owner_id=$2 AND revoked_at IS NULL', [agentId, ownerId]);
-    if (!result.rowCount) throw new Error('Agent credential not found or already revoked.');
+  /**
+   * Permanently deletes an Agent credential. Space grants cascade, while
+   * memories and audit entries keep their history with the Agent reference set
+   * to NULL. The key stops authenticating immediately because its hash is gone.
+   */
+  async remove(ownerId: string, agentId: string): Promise<void> {
+    const result = await this.database.query('DELETE FROM agent_credentials WHERE id=$1 AND owner_id=$2', [agentId, ownerId]);
+    if (!result.rowCount) throw new Error('Agent credential not found.');
   }
 
   async grant(ownerId: string, agentId: string, spaceId: string, scopes: Scope[]) {

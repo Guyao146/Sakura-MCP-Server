@@ -288,9 +288,10 @@ export function createServer(database: Database, principal: Principal, audit: Au
     description: 'List the current user Agent credentials and space grants without secret values.', inputSchema: {}
   }, guarded('agent_list', ['agent:manage'], async (_args, userId) => { requireHuman(); return agents.list(userId); }));
 
-  server.registerTool('agent_revoke', {
-    description: 'Permanently revoke an Agent API key.', inputSchema: { agent_id: z.string().uuid() }
-  }, guarded('agent_revoke', ['agent:manage'], async (args, userId) => { requireHuman(); await agents.revoke(userId, args.agent_id); return { revoked: true }; }));
+  server.registerTool('agent_delete', {
+    description: 'Permanently delete an Agent API key. The key stops working immediately and cannot be restored.',
+    inputSchema: { agent_id: z.string().uuid() }
+  }, guarded('agent_delete', ['agent:manage'], async (args, userId) => { requireHuman(); await agents.remove(userId, args.agent_id); return { deleted: true }; }));
 
   server.registerTool('agent_grant_space', {
     description: 'Grant an owned Agent selected scopes in a memory space visible to the current user.',

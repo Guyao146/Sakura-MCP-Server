@@ -294,9 +294,9 @@ app.post('/api/admin/agents', async context => adminApi(context, true, async ide
   const body = z.object({ name: z.string().min(1).max(120), scopes: agentScopeSchema, expires_at: z.iso.datetime().optional() }).parse(await context.req.json());
   return agents.create(identity.userId, body.name, body.scopes, body.expires_at);
 }));
-app.post('/api/admin/agents/:id/revoke', async context => adminApi(context, true, async identity => {
-  await agents.revoke(identity.userId, z.string().uuid().parse(context.req.param('id')));
-  return { revoked: true };
+app.delete('/api/admin/agents/:id', async context => adminApi(context, true, async identity => {
+  await agents.remove(identity.userId, z.string().uuid().parse(context.req.param('id')));
+  return { deleted: true };
 }));
 app.post('/api/admin/agents/:id/reveal', async context => adminApi(context, true, identity =>
   agents.reveal(identity.userId, z.string().uuid().parse(context.req.param('id')))));
