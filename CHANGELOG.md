@@ -2,6 +2,17 @@
 
 本文件记录 Sakura-MCP-Server 的所有重要变更。
 
+## [0.3.0] - 2026-08-29
+
+### 修复
+
+- 修复 MCP 客户端（Cline、Claude Desktop 等）无法连接的严重缺陷。`/mcp` 与根域名的 MCP 请求在认证通过后返回的是 `200` + `Content-Type: text/event-stream` 但 body 为空的响应，客户端表现为 `MCP error -32000: Connection closed` 或 60 秒后 `MCP error -32001: timed out`。原因是 `handleRequest()` 在拿到 `Response` 对象时就已 resolve，而 SSE body 仍在持续写出，此时 `finally` 分支立刻 `transport.close()` 把流拆掉，导致一个字节都没发出。现在改为在响应流真正结束、出错或被客户端取消后才关闭 transport 与 server，既保证 SSE 完整送达，也不会泄漏连接。
+
+### 提示
+
+- 若使用 Nginx 等反向代理，`/mcp` 所在的 `location` 需要 `proxy_buffering off;`，否则 SSE 流会被缓冲。
+- Authentik 不支持动态客户端注册（RFC 7591 DCR）时，MCP 客户端请改用 Agent 密钥直连，在客户端配置中设置 `"type": "streamableHttp"` 与 `headers.Authorization` 为 `Bearer sk_sakura_...`，即可跳过 OAuth 流程。
+
 ## [0.2.29] - 2026-08-29
 
 ### 变更

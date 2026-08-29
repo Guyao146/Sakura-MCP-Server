@@ -26,7 +26,7 @@ import { adminPage } from './web/admin-page.js';
 import { loginPage } from './web/login-page.js';
 import { RateLimiter, securityHeaders } from './security/http.js';
 import { APP_VERSION, UpdateChecker } from './version.js';
-import { isRootMcpRequest } from './mcp-routing.js';
+import { isRootMcpRequest, streamWithDeferredCleanup } from './mcp-routing.js';
 
 const baseConfig = loadConfig();
 const logger = pino({ level: baseConfig.logLevel });
@@ -404,9 +404,21 @@ async function handleMcp(context: Context): Promise<Response> {
   // Stateless transport prevents one authenticated client's session from being reused by another principal.
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
-  try { return await transport.handleRequest(context.req.raw, { parsedBody: context.get('parsedBody' as never) as unknown }); }
-  catch (error) { logger.error({ err: error, principal: principal.id }, 'MCP transport request failed'); return context.json({ error: 'MCP request failed.' }, 500); }
-  finally { await transport.close(); }
+  let closed = false;
+  const cleanup = async () => {
+    if (closed) return;
+    closed = true;
+    await transport.close().catch(() => undefined);
+    await server.close().catch(() => undefined);
+  };
+  let response: Response;
+  try { response = await transport.handleRequest(context.req.raw, { parsedBody: context.get('parsedBody' as never) as unknown }); }
+  catch (error) {
+    logger.error({ err: error, principal: principal.id }, 'MCP transport request failed');
+    await cleanup();
+    return context.json({ error: 'MCP request failed.' }, 500);
+  }
+  return streamWithDeferredCleanup(response, cleanup);
 }
 
 serve({ fetch: app.fetch, hostname: baseConfig.host, port: baseConfig.port }, info => logger.info({ host: baseConfig.host, port: info.port }, 'Sakura MCP Server listening'));
