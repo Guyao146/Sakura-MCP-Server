@@ -2,13 +2,20 @@
 
 本文件记录 Sakura-MCP-Server 的所有重要变更。
 
-## [未发布]
+## [0.3.1] - 2026-08-31
 
 ### 新增
 
+- 登录页在检测到 Authentik 单点登录会话时显示「以 *** 的身份登录」。`/auth/login` 首次访问会发起一次 `prompt=none` 静默探测：命中则读取显示名并渲染确认按钮，同时提供「使用其他账号登录」；未命中则完全沿用原有登录流程。探测只读取显示名，不创建会话、不写入用户表，因此退出登录后仍不会被静默续登。探测事务在数据库层通过 `purpose` 列与登录事务隔离（`oidc_login_attempts.purpose`，取值 `login`/`probe`），claim 时把 purpose 写进 `WHERE` 条件，使探测取得的授权码无法被兑换为 Web 会话。
+- 登录页改用与生活看板一致的双栏布局与自托管字体（Noto Sans SC / DM Mono，均为 SIL OFL 1.1），并支持日间、夜间、跟随系统三种外观；主色沿用 Sakura 樱粉。字体由 `api.mcylyr.cn` 统一提供，CSP 仅为该域名放行 `style-src` 与 `font-src`，脚本与数据连接仍限制在本站。
 - 新增配套工具 `tools/cline-sync`：托盘常驻的同步守护程序，定时扫描 Cline 本地对话历史（`globalStorage/saoudrizwan.claude-dev/tasks`），按任务游标只推送增量消息，调用 `memory_extract_and_remember` 由服务端抽取长期记忆，无需依赖模型主动调用工具。附带本地配置面板（仅监听 127.0.0.1、每次启动随机 token）、上传前密钥脱敏、干跑与单次同步命令。
 - `tools/cline-sync` 支持打包为单文件可执行程序：`npm run package` 使用 `@yao-pkg/pkg` 的 SEA 模式产出 `release/cline-sync.exe`，内置 Node 22 运行时与托盘辅助程序，目标机器无需安装 Node.js。首次启动会把托盘辅助程序从只读快照解包到用户数据目录再运行。
 - `tools/cline-sync` 新增按任务选择性同步：配置面板列出每个 Cline 任务的最后活动时间、总消息数、待推送消息数与上次同步时间，可选择「全部」「仅同步勾选的任务」「排除勾选的任务」三种模式，并在触发前汇总本次会产生多少次抽取调用。时间窗口优先于选择，被「忽略早于」排除的任务即使勾选也不会同步。
+
+### 升级提示
+
+- 需要执行数据库迁移 `009_login_probe.sql`（`AUTO_MIGRATE=true` 时自动执行）。
+- 「以 *** 的身份登录」要求 Authentik 侧该 Provider 的同意模式为隐式（implicit consent）。若配置为每次登录都需确认，探测会返回 `consent_required`，此时页面静默回退到普通登录流程，不会报错。
 
 ## [0.3.0] - 2026-08-29
 

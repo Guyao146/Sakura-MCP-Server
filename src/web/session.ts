@@ -12,6 +12,35 @@ export interface WebIdentity {
   avatarUrl: string | null; isSystemAdmin: boolean; expiresAt: string;
 }
 
+/**
+ * Why an OIDC transaction was started.
+ *
+ * - `login` exchanges the authorization code for a web session.
+ * - `probe` is a silent `prompt=none` request used only to discover whether an
+ *   Authentik SSO session already exists, so the login page can offer
+ *   "continue as <name>". A probe still receives a usable authorization code, so
+ *   the purpose is stored with the transaction and re-checked on redemption:
+ *   {@link callback} refuses probe transactions and {@link probeCallback}
+ *   refuses login transactions. A probe therefore cannot be turned into a
+ *   session, which keeps signing out from silently signing the user back in.
+ */
+export type LoginPurpose = 'login' | 'probe';
+
+interface LoginAttempt { code_verifier: string; nonce: string; return_to: string; purpose: LoginPurpose; }
+
+/** Verified identity claims from a probe. Deliberately carries no session token. */
+export interface ProbedIdentity { displayName: string; returnTo: string; }
+
+/** Authentik reports "no SSO session" with this standard OIDC error code. */
+const PROBE_NO_SESSION_ERRORS = new Set([
+  'login_required', 'interaction_required', 'consent_required', 'account_selection_required'
+]);
+
+const PROBE_HINT_COOKIE = 'sakura_login_hint';
+/** Long enough to survive the redirect back to the login page, short enough to not linger. */
+const PROBE_HINT_MAX_AGE = 120;
+
+
 export class WebSessionService {
   private localIdentityPromise?: Promise<WebIdentity>;
   constructor(private readonly database: Database, private readonly getConfig: () => AppConfig) {}
@@ -25,7 +54,7 @@ export class WebSessionService {
     return this.localIdentityPromise;
   }
 
-  async begin(returnTo = '/admin') {
+  async begin(returnTo = '/admin', purpose: LoginPurpose = 'login') {
     const auth = this.requireConfig();
     const safeReturnTo = /^\/(?!\/)/.test(returnTo) ? returnTo : '/admin';
     const state = base64url(randomBytes(32));
@@ -33,8 +62,8 @@ export class WebSessionService {
     const nonce = base64url(randomBytes(24));
     const challenge = base64url(createHash('sha256').update(verifier).digest());
     await this.database.query(
-      `INSERT INTO oidc_login_attempts(state_hash,code_verifier,nonce,return_to,expires_at)
-       VALUES($1,$2,$3,$4,now()+interval '10 minutes')`, [hash(state), verifier, nonce, safeReturnTo]);
+      `INSERT INTO oidc_login_attempts(state_hash,code_verifier,nonce,return_to,purpose,expires_at)
+       VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes')`, [hash(state), verifier, nonce, safeReturnTo, purpose]);
     await this.database.query('DELETE FROM oidc_login_attempts WHERE expires_at<=now()');
     const url = new URL(auth.authorizationUrl!);
     url.searchParams.set('client_id', auth.clientId!);
@@ -45,36 +74,61 @@ export class WebSessionService {
     url.searchParams.set('nonce', nonce);
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
+    // A probe must never show UI: Authentik answers with `login_required` instead
+    // of rendering its own login form when no SSO session exists.
+    if (purpose === 'probe') url.searchParams.set('prompt', 'none');
     return url.toString();
   }
 
-  async callback(code: string, state: string): Promise<{ token: string; returnTo: string }> {
-    const auth = this.requireConfig();
-    const client = await this.database.pool.connect();
-    let attempt: { code_verifier: string; nonce: string; return_to: string } | undefined;
-    try {
-      await client.query('BEGIN');
-      const result = await client.query<{ code_verifier: string; nonce: string; return_to: string }>(
-        `DELETE FROM oidc_login_attempts WHERE state_hash=$1 AND expires_at>now()
-         RETURNING code_verifier,nonce,return_to`, [hash(state)]);
-      attempt = result.rows[0];
-      if (!attempt) throw new Error('OIDC login state is invalid or expired.');
-      await client.query('COMMIT');
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
-    finally { client.release(); }
+  /**
+   * Runs the silent probe and returns the display name when Authentik reports an
+   * existing SSO session. Returns undefined when there is no session, so the
+   * caller falls back to the ordinary login flow.
+   *
+   * The verified ID Token is discarded: no user row is touched and no session is
+   * created. The result is only used to render the login page.
+   */
+  async probeCallback(code: string, state: string): Promise<ProbedIdentity> {
+    const attempt = await this.consumeAttempt(state, 'probe');
+    const payload = await this.verifyIdToken(code, attempt);
+    const displayName = typeof payload.name === 'string' ? payload.name
+      : typeof payload.preferred_username === 'string' ? payload.preferred_username
+        : typeof payload.email === 'string' ? payload.email : String(payload.sub ?? '');
+    if (!displayName) throw new Error('OIDC ID Token carried no usable display name.');
+    return { displayName, returnTo: attempt.return_to };
+  }
 
-    const tokenResponse = await fetch(auth.tokenUrl!, {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: auth.clientId!, code,
-        redirect_uri: `${this.getConfig().publicBaseUrl}/auth/callback`, code_verifier: attempt.code_verifier }),
-      signal: AbortSignal.timeout(15_000)
-    });
-    if (!tokenResponse.ok) throw new Error(await describeTokenExchangeFailure(tokenResponse));
-    const tokens = await tokenResponse.json() as { id_token?: string };
-    if (!tokens.id_token) throw new Error('Authentik token response did not include id_token.');
-    const jwks = createRemoteJWKSet(new URL(auth.jwksUri));
-    const { payload } = await jwtVerify(tokens.id_token, jwks, { issuer: auth.issuer, audience: auth.clientId, maxTokenAge: '10m' });
-    if (payload.nonce !== attempt.nonce) throw new Error('OIDC nonce validation failed.');
+  /** True when Authentik's probe response means "no SSO session", not a real failure. */
+  static isProbeMiss(error: string | undefined): boolean {
+    return !!error && PROBE_NO_SESSION_ERRORS.has(error);
+  }
+
+  /**
+   * Short-lived signed cookie carrying the probed display name to the login page.
+   *
+   * Signed with `CONFIG_ENCRYPTION_KEY` so the browser cannot forge a name, and
+   * readable by the page script, which is why it is not HttpOnly. It contains no
+   * token and grants no access: the visitor still has to complete a real login.
+   */
+  probeHintCookie(displayName: string): string {
+    const value = Buffer.from(displayName.slice(0, 120), 'utf8').toString('base64url');
+    const payload = `${value}.${this.signProbeHint(value)}`;
+    return `${PROBE_HINT_COOKIE}=${payload}; Path=/auth; SameSite=Lax; Max-Age=${PROBE_HINT_MAX_AGE}${this.secureFlag()}`;
+  }
+
+  clearProbeHintCookie(): string {
+    return `${PROBE_HINT_COOKIE}=; Path=/auth; SameSite=Lax; Max-Age=0${this.secureFlag()}`;
+  }
+
+  private signProbeHint(value: string): string {
+    return createHmac('sha256', this.getConfig().setup.encryptionKey).update(`probe:${value}`).digest('base64url');
+  }
+
+
+  async callback(code: string, state: string): Promise<{ token: string; returnTo: string }> {
+    const attempt = await this.consumeAttempt(state, 'login');
+    const payload = await this.verifyIdToken(code, attempt);
+    const auth = this.requireConfig();
     if (!payload.sub) throw new Error('OIDC ID Token is missing subject.');
     const email = typeof payload.email === 'string' ? payload.email : undefined;
     const displayName = typeof payload.name === 'string' ? payload.name : typeof payload.preferred_username === 'string' ? payload.preferred_username : payload.sub;
@@ -87,6 +141,47 @@ export class WebSessionService {
       [identity.userId, hash(token)]);
     return { token, returnTo: attempt.return_to };
   }
+
+  /**
+   * Atomically claims a pending OIDC transaction.
+   *
+   * The purpose is part of the WHERE clause rather than checked afterwards, so a
+   * probe transaction can never be redeemed by the login path and vice versa. The
+   * row is deleted on read, making every authorization code single-use.
+   */
+  private async consumeAttempt(state: string, purpose: LoginPurpose): Promise<LoginAttempt> {
+    const client = await this.database.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<LoginAttempt>(
+        `DELETE FROM oidc_login_attempts WHERE state_hash=$1 AND purpose=$2 AND expires_at>now()
+         RETURNING code_verifier,nonce,return_to,purpose`, [hash(state), purpose]);
+      const attempt = result.rows[0];
+      if (!attempt) throw new Error('OIDC login state is invalid or expired.');
+      await client.query('COMMIT');
+      return attempt;
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  }
+
+  /** Exchanges the authorization code and returns the verified ID Token claims. */
+  private async verifyIdToken(code: string, attempt: LoginAttempt): Promise<JWTPayload> {
+    const auth = this.requireConfig();
+    const tokenResponse = await fetch(auth.tokenUrl!, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: auth.clientId!, code,
+        redirect_uri: `${this.getConfig().publicBaseUrl}/auth/callback`, code_verifier: attempt.code_verifier }),
+      signal: AbortSignal.timeout(15_000)
+    });
+    if (!tokenResponse.ok) throw new Error(await describeTokenExchangeFailure(tokenResponse));
+    const tokens = await tokenResponse.json() as { id_token?: string };
+    if (!tokens.id_token) throw new Error('Authentik token response did not include id_token.');
+    const jwks = createRemoteJWKSet(new URL(auth.jwksUri));
+    const { payload } = await jwtVerify(tokens.id_token, jwks, { issuer: auth.issuer, audience: auth.clientId, maxTokenAge: '10m' });
+    if (payload.nonce !== attempt.nonce) throw new Error('OIDC nonce validation failed.');
+    return payload;
+  }
+
 
   async authenticate(token: string | undefined): Promise<WebIdentity> {
     if (!token?.startsWith('sess_')) throw new Error('Web session is missing.');
@@ -142,11 +237,13 @@ export class WebSessionService {
   }
 
   cookie(token: string, maxAge = 43_200): string {
-    const secure = this.getConfig().publicBaseUrl.startsWith('https://') ? '; Secure' : '';
-    return `sakura_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+    return `sakura_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${this.secureFlag()}`;
   }
 
-  clearCookie(): string { return `sakura_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${this.getConfig().publicBaseUrl.startsWith('https://') ? '; Secure' : ''}`; }
+  clearCookie(): string { return `sakura_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${this.secureFlag()}`; }
+
+  private secureFlag(): string { return this.getConfig().publicBaseUrl.startsWith('https://') ? '; Secure' : ''; }
+
 
   static readCookie(header: string | undefined): string | undefined {
     return header?.split(';').map(item => item.trim()).find(item => item.startsWith('sakura_session='))?.slice('sakura_session='.length);
