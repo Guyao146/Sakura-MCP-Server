@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import { loadConfig, saveConfig } from './store.js';
 import { dataDir, type SyncConfig } from './config.js';
 import { SyncScheduler } from './scheduler.js';
+import { listTaskInventory } from './sync.js';
 import { ConfigPanel } from './gui.js';
 import { resolveSysTray } from './systray-interop.js';
 import { prepareTrayBinary } from './tray-binary.js';
@@ -33,7 +34,8 @@ async function main(): Promise<void> {
     },
     getStatus: () => scheduler.status(),
     syncNow: async () => { void scheduler.runOnce(); },
-    testConnection: cfg => scheduler.testConnection(cfg)
+    testConnection: cfg => scheduler.testConnection(cfg),
+    listTasks: () => listTaskInventory(config)
   });
 
   const url = await panel.start();
