@@ -127,4 +127,31 @@ describe('memory database schema', () => {
     expect(sql).toContain('request_id uuid');
     expect(sql).toContain('audit_logs_action_created_idx');
   });
+
+  it('separates silent login probes from real login attempts in the schema', async () => {
+    const sql = await readFile(new URL('../migrations/009_login_probe.sql', import.meta.url), 'utf8');
+    expect(sql).toContain('ALTER TABLE oidc_login_attempts');
+    expect(sql).toContain("purpose text NOT NULL DEFAULT 'login'");
+    expect(sql).toContain("CHECK (purpose IN ('login', 'probe'))");
+  });
+
+  it('claims OIDC transactions by purpose so a probe cannot become a session', async () => {
+    const source = await readFile(new URL('../src/web/session.ts', import.meta.url), 'utf8');
+    // The purpose belongs in the WHERE clause: a code minted for a probe must be
+    // unredeemable by the login path even if later refactors drop a branch.
+    expect(source).toContain('WHERE state_hash=$1 AND purpose=$2 AND expires_at>now()');
+    expect(source).toContain("consumeAttempt(state, 'login')");
+    expect(source).toContain("consumeAttempt(state, 'probe')");
+    // The probe must ask Authentik to stay silent rather than render its login form.
+    expect(source).toContain("if (purpose === 'probe') url.searchParams.set('prompt', 'none')");
+  });
+
+  it('probes at most once per visit and never redirects in a loop', async () => {
+    const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(source).toContain("context.req.query('probed') !== '1'");
+    expect(source).toContain("webSessions.begin(returnTo, 'probe')");
+    expect(source).toContain('WebSessionService.isProbeMiss(failure)');
+    // A failed probe still lands on the login page instead of surfacing an error.
+    expect(source).toContain("'/auth/login?probed=1&reason=probe_failed'");
+  });
 });

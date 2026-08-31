@@ -129,21 +129,52 @@ app.post('/api/setup/complete', async context => {
 app.get('/auth/login', async context => {
   if (!(await settings.installation()).completed) return context.redirect('/setup');
   if (!config.authEnabled) return context.redirect('/admin');
+  // Probe once per visit. `probed=1` marks the round trip as done so a provider
+  // error can never bounce the visitor between here and Authentik forever.
+  if (context.req.query('probed') !== '1' && !context.req.query('reason')) {
+    const returnTo = context.req.query('return_to') ?? '/admin';
+    try { return context.redirect(await webSessions.begin(returnTo, 'probe')); }
+    catch { return context.html(loginPage); }
+  }
   return context.html(loginPage);
 });
 app.get('/auth/start', async context => {
   if (!(await settings.installation()).completed) return context.redirect('/setup');
   if (!config.authEnabled) return context.redirect('/admin');
-  try { return context.redirect(await webSessions.begin(context.req.query('return_to') ?? '/admin')); }
+  try {
+    const url = await webSessions.begin(context.req.query('return_to') ?? '/admin');
+    // "Sign in as someone else" must reach the account picker even though an SSO
+    // session exists, so forward the intent to Authentik.
+    const target = context.req.query('switch') === '1'
+      ? (() => { const u = new URL(url); u.searchParams.set('prompt', 'select_account'); return u.toString(); })()
+      : url;
+    context.header('Set-Cookie', webSessions.clearProbeHintCookie());
+    return context.redirect(target);
+  }
   catch (error) { return context.json({ error: 'login_failed', error_description: error instanceof Error ? error.message : 'Login failed.' }, 500); }
 });
 app.get('/auth/callback', async context => {
   if (!config.authEnabled) return context.json({ error: 'auth_disabled', error_description: 'Authentication is disabled.' }, 404);
   const code = context.req.query('code'); const state = context.req.query('state');
+  const failure = context.req.query('error');
+  // A silent probe answers with an error rather than a code when Authentik has no
+  // usable SSO session. Treat those as "not signed in" and fall through quietly.
+  if (!code && failure) {
+    return context.redirect(WebSessionService.isProbeMiss(failure)
+      ? '/auth/login?probed=1'
+      : '/auth/login?probed=1&reason=probe_failed');
+  }
   if (!code || !state) return context.json({ error: 'invalid_callback', error_description: 'Missing code or state.' }, 400);
+  // Probe transactions are claimed by purpose, so this never consumes a login.
+  try {
+    const probed = await webSessions.probeCallback(code, state);
+    context.header('Set-Cookie', webSessions.probeHintCookie(probed.displayName));
+    return context.redirect(`/auth/login?probed=1&return_to=${encodeURIComponent(probed.returnTo)}`);
+  } catch { /* Not a probe; fall through to the ordinary login exchange. */ }
   try {
     const result = await webSessions.callback(code, state);
     context.header('Set-Cookie', webSessions.cookie(result.token));
+    context.header('Set-Cookie', webSessions.clearProbeHintCookie());
     const identity = await webSessions.authenticate(result.token);
     await audit.record({ actorUserId: identity.userId, authSource: 'authentik', action: 'auth.login', result: 'success' });
     return context.redirect(result.returnTo);
@@ -152,6 +183,7 @@ app.get('/auth/callback', async context => {
     return context.json({ error: 'callback_failed', error_description: error instanceof Error ? error.message : 'OIDC callback failed.' }, 401);
   }
 });
+
 app.post('/auth/logout', async context => {
   if (!config.authEnabled) return context.json({ loggedOut: true, authEnabled: false, redirectTo: '/admin' });
   try {

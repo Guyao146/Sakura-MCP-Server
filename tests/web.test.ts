@@ -16,6 +16,34 @@ const identity: WebIdentity = {
 };
 
 describe('Web management security', () => {
+  it('signs the probe hint so the browser cannot forge an identity', () => {
+    const service = new WebSessionService({} as never, () => config);
+    const cookie = service.probeHintCookie('张三');
+    // Displayed by the page script, so it must be readable, but it carries no
+    // token and the value is only ever rendered as text.
+    expect(cookie).toContain('sakura_login_hint=');
+    expect(cookie).not.toContain('HttpOnly');
+    expect(cookie).toContain('Path=/auth');
+    expect(cookie).toContain('Max-Age=120');
+    expect(cookie).toContain('Secure');
+    const [value, signature] = cookie.slice('sakura_login_hint='.length).split(';')[0].split('.');
+    expect(Buffer.from(value, 'base64url').toString('utf8')).toBe('张三');
+    expect(signature).toBeTruthy();
+    // A different name must not validate against the same signature.
+    expect(service.probeHintCookie('李四')).not.toContain(signature);
+    expect(service.clearProbeHintCookie()).toContain('Max-Age=0');
+  });
+
+  it('treats only standard OIDC "no session" errors as a probe miss', () => {
+    for (const miss of ['login_required', 'interaction_required', 'consent_required', 'account_selection_required']) {
+      expect(WebSessionService.isProbeMiss(miss)).toBe(true);
+    }
+    // Real configuration failures must not be silently swallowed as "not signed in".
+    for (const failure of ['invalid_client', 'server_error', 'access_denied', undefined]) {
+      expect(WebSessionService.isProbeMiss(failure)).toBe(false);
+    }
+  });
+
   it('binds CSRF tokens to the Web session and server key', () => {
     const service = new WebSessionService({} as never, () => config);
     const token = service.csrf(identity);
@@ -124,16 +152,45 @@ describe('Web management security', () => {
     expect(loginPage).not.toContain('${');
     expect(loginPage).not.toContain('location.href=');
     expect(loginPage).not.toContain('innerHTML');
-    expect(loginPage).toContain('box.textContent=notice');
+    expect(loginPage).toContain("$('notice').textContent=notice");
+  });
+
+  it('offers "continue as" only from a probed session and keeps the name as text', () => {
+    for (const marker of ['id="who"', 'id="whoName"', 'id="switchButton"', "params.get('probed')==='1'"]) {
+      expect(loginPage).toContain(marker);
+    }
+    // The probed name is user-controlled, so it must never reach markup as HTML.
+    expect(loginPage).toContain("$('whoName').textContent=hint");
+    // Switching accounts has to bypass the existing SSO session.
+    expect(loginPage).toContain("'&switch=1'");
+  });
+
+  it('loads the shared self-hosted typeface for a consistent ecosystem look', () => {
+    expect(loginPage).toContain('https://api.mcylyr.cn/obj/font/fonts.css');
+    expect(loginPage).toContain("'Noto Sans SC',system-ui,sans-serif");
+    expect(loginPage).toContain("'DM Mono',ui-monospace,monospace");
+    // Fonts are the only third-party dependency: no external scripts or images.
+    expect(loginPage).not.toContain('<script src=');
+    expect(loginPage).not.toContain('fonts.googleapis.com');
+  });
+
+  it('supports light, dark and system themes without a flash on load', () => {
+    for (const marker of ['data-theme-choice="light"', 'data-theme-choice="dark"', 'data-theme-choice="auto"',
+      "localStorage.getItem('sakura-theme')", '[data-theme=dark]']) {
+      expect(loginPage).toContain(marker);
+    }
+    // The theme is applied in <head>, before the body is parsed and painted.
+    expect(loginPage.indexOf("document.documentElement.dataset.theme=d?'dark':'light'"))
+      .toBeLessThan(loginPage.indexOf('<body>'));
   });
 
   it('keeps the login page return target on the local origin', () => {
-    const script = loginPage.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    const script = loginPage.match(/<script>([\s\S]*?)<\/script>/g)?.pop()?.replace(/<\/?script>/g, '');
     expect(script).toBeTruthy();
     expect(() => new Script(script!)).not.toThrow();
     expect(script).toContain("/^\\/(?!\\/)/.test(target)?target:'/admin'");
     expect(script).toContain("encodeURIComponent(safeTarget)");
-    for (const reason of ['expired', 'logged_out']) expect(script).toContain(`${reason}:`);
+    for (const reason of ['expired', 'logged_out', 'probe_failed']) expect(script).toContain(`${reason}:`);
   });
 
   it('grants system administration from configured Authentik groups', () => {
