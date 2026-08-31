@@ -33,6 +33,9 @@ jobs:
       - run: npm run check
         env:
           DATABASE_TEST_URL: postgresql://sakura:test-password@127.0.0.1:5432/sakura_test
+      - name: Check cline-sync tool
+        working-directory: tools/cline-sync
+        run: npm ci && npm run check
       - run: docker build --tag sakura-mcp-server:ci .
       - name: Validate Docker Compose
         env:

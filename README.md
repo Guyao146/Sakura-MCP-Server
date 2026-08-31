@@ -632,6 +632,10 @@ npm.cmd run build
 npm.cmd start
 ```
 
+## 相关工具
+
+- [`tools/cline-sync`](tools/cline-sync/README.md)：托盘常驻的同步工具，定时读取 Cline 本地对话历史并调用 `memory_extract_and_remember` 自动抽取长期记忆，无需手动触发。
+
 ## 当前开发状态
 
 `v0.1.0` 是早期安全 MCP 网关版本；当前 `main` 的应用版本为 `v0.3.0`，对应 GHCR 镜像和生产 Compose 部署版本。

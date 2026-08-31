@@ -1,0 +1,7 @@
+node_modules/
+dist/
+traybin/
+config.json
+cursors.json
+out.txt
+err.txt

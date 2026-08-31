@@ -2,6 +2,12 @@
 
 本文件记录 Sakura-MCP-Server 的所有重要变更。
 
+## [未发布]
+
+### 新增
+
+- 新增配套工具 `tools/cline-sync`：托盘常驻的同步守护程序，定时扫描 Cline 本地对话历史（`globalStorage/saoudrizwan.claude-dev/tasks`），按任务游标只推送增量消息，调用 `memory_extract_and_remember` 由服务端抽取长期记忆，无需依赖模型主动调用工具。附带本地配置面板（仅监听 127.0.0.1、每次启动随机 token）、上传前密钥脱敏、干跑与单次同步命令。
+
 ## [0.3.0] - 2026-08-29
 
 ### 修复

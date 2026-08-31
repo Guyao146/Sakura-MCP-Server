@@ -1,0 +1,30 @@
+{
+  "name": "cline-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Watches Cline task history and pushes conversation summaries into Sakura-MCP-Server memory.",
+  "type": "module",
+  "main": "dist/main.js",
+  "bin": { "cline-sync": "dist/main.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/main.ts",
+    "sync-once": "tsx src/cli.ts",
+    "dry-run": "tsx src/dry-run.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test"
+  },
+  "author": "Guyao146",
+  "license": "LGPL-2.1-only",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "systray2": "2.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
