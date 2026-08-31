@@ -7,6 +7,7 @@
 ### 新增
 
 - 新增配套工具 `tools/cline-sync`：托盘常驻的同步守护程序，定时扫描 Cline 本地对话历史（`globalStorage/saoudrizwan.claude-dev/tasks`），按任务游标只推送增量消息，调用 `memory_extract_and_remember` 由服务端抽取长期记忆，无需依赖模型主动调用工具。附带本地配置面板（仅监听 127.0.0.1、每次启动随机 token）、上传前密钥脱敏、干跑与单次同步命令。
+- `tools/cline-sync` 支持打包为单文件可执行程序：`npm run package` 使用 `@yao-pkg/pkg` 的 SEA 模式产出 `release/cline-sync.exe`，内置 Node 22 运行时与托盘辅助程序，目标机器无需安装 Node.js。首次启动会把托盘辅助程序从只读快照解包到用户数据目录再运行。
 
 ## [0.3.0] - 2026-08-29
 

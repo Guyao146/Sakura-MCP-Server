@@ -1,5 +1,6 @@
 node_modules/
 dist/
+release/
 traybin/
 config.json
 cursors.json

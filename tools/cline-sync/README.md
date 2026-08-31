@@ -28,6 +28,24 @@ macOS 与 Linux 会自动换成对应的 `globalStorage` 路径，也可以在�
 
 ## 安装与运行
 
+### 方式一：单文件 exe（推荐）
+
+```bash
+cd tools/cline-sync
+npm install
+npm run package
+```
+
+产物在 `release/cline-sync.exe`（约 95 MB，内置 Node 22 运行时与托盘辅助程序），双击即可运行，目标机器无需安装 Node.js。默认只构建 `node22-win-x64`；要交叉编译其他平台，改 `package.json` 里 `pkg.targets`，例如：
+
+```json
+{ "pkg": { "targets": ["node22-win-x64", "node22-macos-arm64", "node22-linux-x64"] } }
+```
+
+首次启动时，内置的托盘辅助程序会从只读快照解包到 `%APPDATA%\sakura-cline-sync\traybin\`，之后复用。
+
+### 方式二：从源码运行
+
 ```bash
 cd tools/cline-sync
 npm install
@@ -62,6 +80,7 @@ node dist/main.js
 ```bash
 npm run dry-run     # 干跑：只报告会上传什么，不联网
 npm run sync-once   # 执行一次同步后退出，适合 cron / 计划任务
+npm run package     # 构建单文件 exe 到 release/
 ```
 
 ## 安全说明

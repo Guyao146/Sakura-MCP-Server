@@ -14,6 +14,7 @@ import { dataDir, type SyncConfig } from './config.js';
 import { SyncScheduler } from './scheduler.js';
 import { ConfigPanel } from './gui.js';
 import { resolveSysTray } from './systray-interop.js';
+import { prepareTrayBinary } from './tray-binary.js';
 import { trayIconIco, trayIconPng } from './tray-icon.js';
 
 const log = (message: string) => console.log(`[${new Date().toLocaleTimeString()}] ${message}`);
@@ -56,6 +57,17 @@ function openUrl(url: string): void {
 
 async function startTray(url: string, scheduler: SyncScheduler, getConfig: () => SyncConfig,
   shutdown: () => Promise<void>): Promise<void> {
+  // In a packaged build the bundled tray helper lives in the read-only snapshot,
+  // so copy it out and run from there before systray2 looks for it.
+  try {
+    const trayCwd = await prepareTrayBinary();
+    if (trayCwd) { process.chdir(trayCwd); log(`托盘辅助程序目录：${trayCwd}`); }
+  } catch (error) {
+    log(`托盘辅助程序准备失败，继续以控制台模式运行：${error instanceof Error ? error.message : error}`);
+    keepAlive();
+    return;
+  }
+
   let SysTray: typeof import('systray2').default;
   try {
     SysTray = resolveSysTray(await import('systray2'));
